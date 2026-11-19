@@ -57,7 +57,6 @@ export const LanguageSkillsSection = memo(function LanguageSkillsSection({
         <EuropassSectionTitle
           title={title || "LANGUAGE SKILLS"}
           isInteractive={isInteractive}
-          onAddEntry={onAdd ? () => setIsAdding(true) : undefined}
           addLabel="Add Language entry"
           onDeleteSection={onDeleteSection}
         />

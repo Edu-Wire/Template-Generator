@@ -105,7 +105,8 @@ export function syncSectionsToCvData(
       s.heading?.toLowerCase().includes("employment")
   );
   if (workSec && workSec.content.trim()) {
-    const rawChunks = workSec.content.split(/\n\s*\n+/).filter(Boolean);
+    // Tolerate raw pasted text (markdown, "- " bullets, "Company | Role" headers) from any source
+    const rawChunks = normalizeInternshipPaste(workSec.content).split(/\n\s*\n+/).filter(Boolean);
     const consolidatedChunks: string[] = [];
     for (const chunk of rawChunks) {
       const trimmed = chunk.trim();
@@ -513,9 +514,15 @@ export function syncSectionsToCvData(
   );
   if (interestSec && interestSec.content.trim()) {
     const hasLines = /[\n•]/.test(interestSec.content);
-    const rawSplit = hasLines
-      ? interestSec.content.split(/[\n•]+/)
-      : interestSec.content.split(/[,;]+/);
+    // A pasted prose paragraph (full sentences) stays whole; only short comma lists are split.
+    const trimmedInterest = interestSec.content.trim();
+    const isProseParagraph =
+      !hasLines && (/[.!?]\s+\S/.test(trimmedInterest) || trimmedInterest.length > 160);
+    const rawSplit = isProseParagraph
+      ? [trimmedInterest]
+      : hasLines
+        ? interestSec.content.split(/[\n•]+/)
+        : interestSec.content.split(/[,;]+/);
     const entries = rawSplit
       .map((l) => l.trim().replace(/^[•\-*0-9.)\s]+/, "").trim())
       .filter(Boolean);
@@ -618,6 +625,11 @@ export function syncSectionsToCvData(
     nonDecl.push("declaration");
   }
   updatedCv.sectionOrder = nonDecl;
+
+  // Drop pending (newly created, still empty) sections whose studio section was removed
+  if (updatedCv.pendingSections) {
+    updatedCv.pendingSections = updatedCv.pendingSections.filter((id) => detectedOrder.includes(id));
+  }
 
   return updatedCv;
 }
@@ -879,4 +891,51 @@ export function syncCvDataToSections(
   }
 
   return sections;
+}
+
+/**
+ * Cleans pasted work-experience text (markdown emphasis, "- " bullets, "Company | Role" headers)
+ * into the "Role / Company [dates] / • bullets" layout that syncSectionsToCvData parses.
+ */
+export function normalizeInternshipPaste(raw: string): string {
+  // Strip markdown emphasis and turn "- " / "* " list markers into bullets
+  const cleaned = raw
+    .replace(/\*\*/g, "")
+    .split("\n")
+    .map((l) => l.replace(/^\s*[-*•]\s+/, "• ").replace(/^\s*\*([^*].*?)\*\s*$/, "$1").trimEnd())
+    .join("\n");
+  // Bullet-only blocks belong to the entry above them
+  const merged: string[] = [];
+  for (const chunk of cleaned.split(/\n\s*\n+/).map((c) => c.trim()).filter(Boolean)) {
+    if (/^•/.test(chunk) && merged.length > 0) merged[merged.length - 1] += "\n" + chunk;
+    else merged.push(chunk);
+  }
+  const isDateLine = (l: string) =>
+    l.length < 70 && !l.includes("|") && !/^•/.test(l) && /(?:19|20)\d{2}|present|ongoing|current/i.test(l);
+  return merged
+    .map((chunk) => {
+      const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
+      const second = lines[1] || "";
+      // Layout A: "Company | Role" / "dates" / bullets
+      if (lines.length >= 2 && lines[0].includes("|") && !lines[0].includes("[") && isDateLine(second)) {
+        const [company, ...roleParts] = lines[0].split("|").map((p) => p.trim());
+        const role = roleParts.join(" ") || "Role";
+        return [role, `${company} [ ${second} ]`, ...lines.slice(2)].join("\n");
+      }
+      // Layout B: "Company, Location" / "Role | dates" / bullets
+      const isCompanyFirst =
+        lines.length >= 2 &&
+        !/^[•\-*]/.test(lines[0]) &&
+        !lines[0].includes("|") &&
+        !lines[0].includes("[") &&
+        second.includes("|") &&
+        !second.includes("[") &&
+        /(?:19|20)\d{2}|present|ongoing|current/i.test(second);
+      if (!isCompanyFirst) return lines.join("\n");
+      const [role, ...dateParts] = second.split("|").map((p) => p.trim());
+      const [company, ...loc] = lines[0].split(",").map((p) => p.trim());
+      const compLine = [loc.length ? `${company} | ${loc.join(", ")}` : company, `[ ${dateParts.join(" ")} ]`].join(" ");
+      return [role, compLine, ...lines.slice(2)].join("\n");
+    })
+    .join("\n\n");
 }

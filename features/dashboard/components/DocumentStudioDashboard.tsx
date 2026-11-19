@@ -23,6 +23,11 @@ import type { Editor } from "@tiptap/react";
 import { TiptapEditor, type FormattingState } from "./TiptapEditor";
 import { DocumentThumbnailPreview } from "./DocumentThumbnailPreview";
 import { EuropassTemplate, EUROPASS_DEFAULT_SECTION_ORDER } from "@/templates/europass/EuropassTemplate";
+import {
+  SECTION_EDITOR_OPEN_EVENT,
+  SectionEditorForm,
+  type SectionEditorOpenDetail,
+} from "@/templates/europass/sections/PendingSectionForm";
 import { mapCrmToNormalizedStudent, mapNormalizedToResume, mapNormalizedToSop } from "@/services/normalization";
 import type { StudentDocumentContext } from "@/features/sop-generator/types/sop-generator";
 import {
@@ -45,7 +50,9 @@ import {
   SAMPLE_STUDENTS,
 } from "@/lib/sampleStudents";
 import type { DocumentData } from "@/types";
-import { syncSectionsToCvData, syncCvDataToSections, headingToSectionId } from "../utils/documentStudioSync";
+import { syncSectionsToCvData, syncCvDataToSections, headingToSectionId, normalizeInternshipPaste } from "../utils/documentStudioSync";
+import { mergeImportedIntoCv } from "@/features/document-generator/utils/mergeImportedCv";
+import type { ImportOverrides } from "@/features/document-generator/types/import";
 import { parseDateRange } from "@/features/document-generator/utils/dateRange";
 import { processCvChatInstruction, isValidSkillNoun } from "../utils/cvChatIntentEngine";
 import { DocumentContext } from "@/features/document-generator/state/DocumentContext";
@@ -441,6 +448,25 @@ export interface CvSectionPromptDef {
   placeholder: string;
 }
 
+/** Canonical CV section ids → display names used by the section editor. */
+const CV_SECTION_PROMPTS_BY_ID: Record<string, string> = {
+  aboutMe: "About Me",
+  education: "Education and Training",
+  internships: "Work Experience",
+  academicProjects: "Academic Projects",
+  achievements: "Achievements & Awards",
+  leadershipActivities: "Leadership & Extracurricular",
+  volunteering: "Volunteering",
+  certifications: "Certifications",
+  languages: "Language Skills",
+  englishCertificate: "English Language Certificate",
+  skills: "Skills",
+  hobbies: "Hobbies and Interests",
+  recommendations: "Recommendations",
+  academicInterests: "Academic Interests",
+  declaration: "Declaration",
+};
+
 export const CV_SECTION_PROMPTS: Record<string, CvSectionPromptDef> = {
   "WORK EXPERIENCE": {
     sectionKey: "workExperience",
@@ -834,30 +860,9 @@ export function DocumentStudioDashboard() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [recentDocsPage, setRecentDocsPage] = useState(1);
   const [recentDocsPerPage, setRecentDocsPerPage] = useState(10);
-  const [recentDocs, setRecentDocs] = useState<HydratedDocumentData[]>(() => {
-    if (typeof window === "undefined") return INITIAL_RECENT_DOCS;
-    try {
-      const stored = localStorage.getItem(RECENT_DOCS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((doc: HydratedDocumentData) => {
-            if (doc.docType === "COVER_LETTER" && Array.isArray(doc.sections)) {
-              return {
-                ...doc,
-                sections: doc.sections.map((sec) => ({
-                  ...sec,
-                  content: cleanCoverLetterText(sec.content),
-                })),
-              };
-            }
-            return doc;
-          });
-        }
-      }
-    } catch { }
-    return INITIAL_RECENT_DOCS;
-  });
+  // Start from the defaults on both server and client so hydration matches;
+  // the saved list is loaded from localStorage right after mount (see effect below).
+  const [recentDocs, setRecentDocs] = useState<HydratedDocumentData[]>(INITIAL_RECENT_DOCS);
 
   // Modal State (2 clean dropdowns: student first, then doc type)
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1414,14 +1419,34 @@ export function DocumentStudioDashboard() {
     setTimeout(() => setAiToast(null), 2500);
   }, []);
 
-  // Hydrate persistent documents from localStorage if empty
+  // Hydrate persistent documents from localStorage (after mount, to avoid a hydration mismatch)
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const stored = localStorage.getItem(RECENT_DOCS_STORAGE_KEY);
       if (!stored) {
         localStorage.setItem(RECENT_DOCS_STORAGE_KEY, JSON.stringify(INITIAL_RECENT_DOCS));
+      } else {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const loaded = parsed.map((doc: HydratedDocumentData) =>
+            doc.docType === "COVER_LETTER" && Array.isArray(doc.sections)
+              ? {
+                  ...doc,
+                  sections: doc.sections.map((sec) => ({
+                    ...sec,
+                    content: cleanCoverLetterText(sec.content),
+                  })),
+                }
+              : doc
+          );
+          timer = setTimeout(() => setRecentDocs(loaded), 0);
+        }
       }
     } catch { }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   // Sync roster from GlobalStudentContext and direct /api/students/list
@@ -2444,8 +2469,81 @@ export function DocumentStudioDashboard() {
     }
   };
 
+  // Paste-style section editor (add an entry to, or edit, a CV section).
+  // The text becomes the studio section content and is synced into the structured CV.
+  const [sectionEditor, setSectionEditor] = useState<{ sectionId: string; mode: "add" | "edit" } | null>(null);
+
+  // Work experience pasted as "Company, Location / Role | Dates / bullets" → "Role / Company | Location [Dates] / bullets"
+  const REPLACE_ONLY_SECTIONS = ["aboutMe", "declaration", "englishCertificate", "languages"];
+  const LINE_SEPARATED_SECTIONS = ["skills", "hobbies", "academicInterests", "achievements"];
+
+  const handleSectionEditorSave = (
+    sectionId: string,
+    mode: "add" | "edit",
+    title: string,
+    rawContent: string,
+    position: "above" | "below" = "below"
+  ) => {
+    if (!editableDocContent) return;
+    const baseCv =
+      cvDocumentData ||
+      getEuropassData(editableDocContent.studentId, editableDocContent.studentName, selectedStudentData);
+
+    const newPart = sectionId === "internships" ? normalizeInternshipPaste(rawContent) : rawContent;
+
+    const sections = [...editableDocContent.sections];
+    const idx = sections.findIndex((s) => headingToSectionId(s.heading || "") === sectionId);
+    const existing = idx >= 0 ? (sections[idx].content || "").trim() : "";
+    const content =
+      mode === "add" && existing && !REPLACE_ONLY_SECTIONS.includes(sectionId)
+        ? position === "above"
+          ? `${newPart}${LINE_SEPARATED_SECTIONS.includes(sectionId) ? "\n" : "\n\n"}${existing}`
+          : `${existing}${LINE_SEPARATED_SECTIONS.includes(sectionId) ? "\n" : "\n\n"}${newPart}`
+        : newPart;
+
+    setDocHistory((prev) => [...prev, JSON.parse(JSON.stringify(editableDocContent))]);
+    setCvHistory((prev) => [...prev, JSON.parse(JSON.stringify(baseCv))]);
+    setCvRedoHistory([]);
+    setRedoHistory([]);
+
+    const keepsMapping = headingToSectionId(title) === sectionId;
+    const heading = keepsMapping ? title.toUpperCase() : idx >= 0 ? sections[idx].heading || title.toUpperCase() : title.toUpperCase();
+    if (idx >= 0) sections[idx] = { ...sections[idx], heading, content };
+    else sections.push({ heading, content });
+
+    const synced = syncSectionsToCvData(sections, baseCv);
+    synced.pendingSections = (synced.pendingSections ?? []).filter((id) => id !== sectionId);
+    if (synced.sectionOrder && !synced.sectionOrder.includes(sectionId)) synced.sectionOrder.push(sectionId);
+
+    const updatedDoc: HydratedDocumentData = {
+      ...editableDocContent,
+      sections,
+      wordCount: sections.reduce((acc, s) => acc + (s.content ? s.content.trim().split(/\s+/).filter(Boolean).length : 0), 0),
+    };
+    setCvDocumentData(synced);
+    setEditableDocContent(updatedDoc);
+    setActiveDocument(updatedDoc);
+    syncDocumentToRecent(updatedDoc, "Edited just now");
+    const html = docSectionsToHtml(sections, updatedDoc.docType, updatedDoc.title);
+    setTiptapHtml(html);
+    if (tiptapEditor) tiptapEditor.commands.setContent(html);
+    setActiveCvSectionPrompt(null);
+    setSectionEditor(null);
+    setAiToast({ message: `✨ Saved ${heading}`, type: "success" });
+    setTimeout(() => setAiToast(null), 3000);
+  };
+
+  useEffect(() => {
+    const listener = (e: Event) => {
+      const d = (e as CustomEvent<SectionEditorOpenDetail>).detail;
+      if (d) setSectionEditor({ sectionId: d.sectionId, mode: d.mode });
+    };
+    window.addEventListener(SECTION_EDITOR_OPEN_EVENT, listener);
+    return () => window.removeEventListener(SECTION_EDITOR_OPEN_EVENT, listener);
+  }, []);
+
   // Canvas Section Management: Add Section
-  const handleAddSection = (heading: string, defaultContent: string = "") => {
+  const handleAddSection =(heading: string, defaultContent: string = "") => {
     if (!editableDocContent) return;
 
     // In CV mode, guide the operator interactively with Chatbot Cross-Questions
@@ -2461,6 +2559,48 @@ export function DocumentStudioDashboard() {
       };
 
       const sectionAlreadyExists = isCvSectionPresent(promptDef.sectionKey, promptDef.heading);
+
+      // 0. Create the (empty) section on the CV right away so it is visible on the
+      // canvas; details can then be filled via the AI chat or edited manually.
+      const newSectionId = headingToSectionId(promptDef.heading);
+      const alreadyInSections = editableDocContent.sections.some(
+        (s) => headingToSectionId(s.heading || "") === newSectionId
+      );
+      if (newSectionId && !sectionAlreadyExists) {
+        const baseCv =
+          cvDocumentData ||
+          getEuropassData(editableDocContent.studentId, editableDocContent.studentName, selectedStudentData);
+        setDocHistory((prev) => [...prev, JSON.parse(JSON.stringify(editableDocContent))]);
+        setCvHistory((prev) => [...prev, JSON.parse(JSON.stringify(baseCv))]);
+        setCvRedoHistory([]);
+        setRedoHistory([]);
+
+        const sectionsWithNew = alreadyInSections
+          ? editableDocContent.sections
+          : [...editableDocContent.sections, { heading: promptDef.heading, content: "" }];
+        const cvWithNew = syncSectionsToCvData(sectionsWithNew, baseCv);
+        cvWithNew.pendingSections = [
+          ...(cvWithNew.pendingSections ?? []).filter((id) => id !== newSectionId),
+          newSectionId,
+        ];
+        // Keep the closing declaration last
+        if (cvWithNew.sectionOrder?.includes("declaration")) {
+          cvWithNew.sectionOrder = [
+            ...cvWithNew.sectionOrder.filter((id) => id !== "declaration"),
+            "declaration",
+          ];
+        }
+        const docWithNew: HydratedDocumentData = { ...editableDocContent, sections: sectionsWithNew };
+        setCvDocumentData(cvWithNew);
+        setEditableDocContent(docWithNew);
+        setActiveDocument(docWithNew);
+        syncDocumentToRecent(docWithNew, "Edited just now");
+        const newHtml = docSectionsToHtml(sectionsWithNew, docWithNew.docType, docWithNew.title);
+        setTiptapHtml(newHtml);
+        if (tiptapEditor) tiptapEditor.commands.setContent(newHtml);
+        setTimeout(() => handleScrollToSection(promptDef.heading), 350);
+      }
+
       const studentName = editableDocContent.studentName || "the student";
       const rawQuestion = sectionAlreadyExists
         ? (promptDef.updateQuestion || promptDef.createQuestion)
@@ -5367,27 +5507,41 @@ export function DocumentStudioDashboard() {
 
   // Handle confirmed imported CV payload in Template Studio or Home Dashboard
   const handleCvImportApplied = useCallback(
-    (importedData: DocumentData) => {
-      // Retain existing valid photo if imported payload didn't extract one
-      const existingPhotoUrl =
-        cvDocumentData?.personal?.photoUrl ||
-        (() => {
-          const snap = selectedStudentData || currentDocSnapshot;
-          if (!snap) return undefined;
-          try {
-            return mapNormalizedToResume(mapCrmToNormalizedStudent(snap)).student?.personal?.photoUrl;
-          } catch {
-            return undefined;
-          }
-        })();
+    (importedData: DocumentData, overrides?: ImportOverrides) => {
+      // Existing (stored / open) CV data is never overwritten: the upload only fills
+      // empty fields and adds entries/sections that are not already there.
+      const baseCv: DocumentData | null =
+        cvDocumentData ||
+        (selectedStudentData || editableDocContent
+          ? getEuropassData(
+              editableDocContent?.studentId || selectedStudentData?.student?._id || "",
+              editableDocContent?.studentName || selectedStudentName || "",
+              selectedStudentData
+            )
+          : null);
 
-      const finalImportedData: DocumentData = {
-        ...importedData,
-        personal: {
-          ...importedData.personal,
-          photoUrl: importedData.personal?.photoUrl || existingPhotoUrl,
-        },
-      };
+      let finalImportedData: DocumentData;
+      if (baseCv) {
+        finalImportedData = mergeImportedIntoCv(baseCv, importedData, {
+          overridePersonalFields: overrides?.personalFields,
+          overrideEnglishScore: overrides?.englishScore,
+        }).data;
+      } else {
+        // Nothing stored yet: use the upload, but the photo only ever comes from the CRM record
+        const snap = selectedStudentData || currentDocSnapshot;
+        let crmPhoto: string | undefined;
+        if (snap) {
+          try {
+            crmPhoto = mapNormalizedToResume(mapCrmToNormalizedStudent(snap)).student?.personal?.photoUrl;
+          } catch {
+            crmPhoto = undefined;
+          }
+        }
+        finalImportedData = {
+          ...importedData,
+          personal: { ...importedData.personal, photoUrl: crmPhoto },
+        };
+      }
 
       const studentName =
         finalImportedData.personal?.fullName?.trim() ||
@@ -5468,12 +5622,12 @@ export function DocumentStudioDashboard() {
       }
 
       setIsCvImportModalOpen(false);
-      setAiToast({ message: "✓ Imported CV loaded into Template Studio!", type: "success" });
+      setAiToast({ message: "✓ CV imported — existing details kept, new details added", type: "success" });
 
       const newMsg: ChatMessage = {
         id: generateUniqueId("msg"),
         sender: "assistant",
-        text: `I've imported your existing CV for **${studentName}**. All extracted sections, qualifications, and work experiences are loaded into the editor. You can now edit any section, rearrange them, ask me to refine them, or export your Europass CV!`,
+        text: `I've imported the uploaded CV for **${studentName}**. Your existing details were left untouched, and only new information from the CV (missing fields, new entries and sections) was added. You can now edit any section, rearrange them, or ask me to refine them.`,
         timestamp: getFormattedTimestamp(),
         actionType: "general",
       };
@@ -5481,7 +5635,7 @@ export function DocumentStudioDashboard() {
     },
     [
       handleEuropassDispatch,
-      cvDocumentData?.personal?.photoUrl,
+      cvDocumentData,
       selectedStudentData,
       selectedStudentId,
       selectedStudentName,
@@ -6446,6 +6600,18 @@ export function DocumentStudioDashboard() {
         isOpen={isCvImportModalOpen}
         onClose={() => setIsCvImportModalOpen(false)}
         onImportApplied={handleCvImportApplied}
+        existingData={
+          isCvImportModalOpen
+            ? cvDocumentData ||
+              (selectedStudentData || editableDocContent
+                ? getEuropassData(
+                    editableDocContent?.studentId || selectedStudentData?.student?._id || "",
+                    editableDocContent?.studentName || selectedStudentName || "",
+                    selectedStudentData
+                  )
+                : null)
+            : null
+        }
         onSaveCurrentDraft={() => {
           if (editableDocContent) {
             syncDocumentToRecent(editableDocContent, "Saved draft before import");
@@ -7841,6 +8007,33 @@ export function DocumentStudioDashboard() {
                   )}
                 </div>
               )}
+
+              {/* ── Paste-style section editor (add to / edit a CV section) ── */}
+              {sectionEditor && editableDocContent && editableDocContent.docType === "CV" && (() => {
+                const { sectionId, mode } = sectionEditor;
+                const existingSec = editableDocContent.sections.find(
+                  (s) => headingToSectionId(s.heading || "") === sectionId
+                );
+                const label = CV_SECTION_PROMPTS_BY_ID[sectionId] ?? sectionId;
+                const title = existingSec?.heading || label;
+                const initialContent = mode === "edit" ? existingSec?.content || "" : "";
+                return (
+                  <SectionEditorForm
+                    key={`${sectionId}-${mode}`}
+                    heading={`${mode === "edit" ? "Edit" : "Add to"} ${label}`}
+                    mode={mode}
+                    initialTitle={title}
+                    initialContent={initialContent}
+                    showPosition={
+                      mode === "add" &&
+                      !REPLACE_ONLY_SECTIONS.includes(sectionId) &&
+                      Boolean(existingSec?.content?.trim())
+                    }
+                    onSave={(t, c, pos) => handleSectionEditorSave(sectionId, mode, t, c, pos)}
+                    onClose={() => setSectionEditor(null)}
+                  />
+                );
+              })()}
 
               {/* ── Rearrange Sections Modal (CV uses Drag-and-Drop RearrangeSectionsModal; SOP/LOR/Cover Letter uses section list) ── */}
               {isRearrangeModalOpen && editableDocContent && editableDocContent.docType === "CV" && (() => {

@@ -49,6 +49,16 @@ export interface ResumeImportResult {
   ambiguousItems: AmbiguousItem[];
   crmConflicts: CrmConflictItem[];
   unmappedSnippets: string[];
+  /** Problems the counsellor should know about before applying (e.g. the AI step failed). */
+  warnings?: string[];
   gridfsFileId?: string;
   errorMessage?: string;
+}
+
+/** What the counsellor explicitly chose to replace when applying an import onto an existing CV. */
+export interface ImportOverrides {
+  /** Personal fields whose stored value should be replaced by the uploaded one. */
+  personalFields: string[];
+  /** Replace the stored English test score with the uploaded one. */
+  englishScore: boolean;
 }

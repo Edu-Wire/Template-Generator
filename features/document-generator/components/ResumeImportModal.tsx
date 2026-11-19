@@ -12,17 +12,20 @@
 
 import React, { useState, useEffect } from "react";
 import type { DocumentData } from "@/types";
-import type { ResumeImportResult } from "../types/import";
+import type { ResumeImportResult, ImportOverrides } from "../types/import";
 import type { CrmSnapshot } from "@/types/crmSnapshot";
 import type { ApplicationTarget } from "../guidance/types";
 import { ResumeImportDropzone } from "./ResumeImportDropzone";
+import { findCrmResumeFiles, type CrmResumeFile } from "../utils/crmResume";
 import { ResumeImportReview } from "./ResumeImportReview";
 import { ResumeUnsavedChangesDialog } from "./ResumeUnsavedChangesDialog";
 
 interface ResumeImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImportApplied: (data: DocumentData) => void;
+  onImportApplied: (data: DocumentData, overrides?: ImportOverrides) => void;
+  /** The CV that is already stored/open. When given, the import is merged into it (nothing is overwritten). */
+  existingData?: DocumentData | null;
   onSaveCurrentDraft: () => void;
   hasUnsavedChanges: boolean;
   crmSnapshot?: CrmSnapshot | null;
@@ -40,6 +43,7 @@ export function ResumeImportModal({
   isOpen,
   onClose,
   onImportApplied,
+  existingData,
   onSaveCurrentDraft,
   hasUnsavedChanges,
   crmSnapshot,
@@ -63,14 +67,21 @@ export function ResumeImportModal({
 
   if (!isOpen) return null;
 
-  async function handleFileSelect(file: File) {
+  const crmResumes = findCrmResumeFiles(crmSnapshot);
+
+  async function handleFileSelect(file: File | null, crmResume?: CrmResumeFile) {
     setStage("processing");
     setErrorMessage(null);
     setProcessingStep("Reading document and extracting text...");
 
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      if (file) {
+        formData.append("file", file);
+      } else if (crmResume) {
+        formData.append("crmResumeUrl", crmResume.url);
+        formData.append("crmResumeName", crmResume.name);
+      }
       if (crmSnapshot) {
         formData.append("crmSnapshot", JSON.stringify(crmSnapshot));
         formData.append("studentId", crmSnapshot.student?._id || "");
@@ -101,7 +112,7 @@ export function ResumeImportModal({
     }
   }
 
-  async function handleConfirmApply(finalData: DocumentData) {
+  async function handleConfirmApply(finalData: DocumentData, overrides?: ImportOverrides) {
     if (importResult) {
       try {
         await fetch(`/api/resume/import/${importResult.importId}/confirm`, {
@@ -117,7 +128,7 @@ export function ResumeImportModal({
       }
     }
 
-    onImportApplied(finalData);
+    onImportApplied(finalData, overrides);
     onClose();
   }
 
@@ -143,7 +154,7 @@ export function ResumeImportModal({
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
         >
           <div
             className={`bg-white rounded-2xl shadow-2xl border border-slate-200 w-full overflow-hidden transition-all ${
@@ -171,7 +182,43 @@ export function ResumeImportModal({
                   </button>
                 </div>
 
-                <ResumeImportDropzone onFileSelect={handleFileSelect} />
+                {crmResumes.length > 0 && (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-sky-900">
+                      Resume found in the CRM record
+                    </p>
+                    <ul className="space-y-1.5">
+                      {crmResumes.map((r) => (
+                        <li
+                          key={r.url}
+                          className="flex items-center justify-between gap-3 bg-white border border-sky-100 rounded-lg px-3 py-2 text-xs"
+                        >
+                          <span className="min-w-0 truncate text-slate-700">
+                            <span className="font-medium">{r.name}</span>
+                            {r.uploadedOn && (
+                              <span className="text-slate-400">
+                                {" "}
+                                · uploaded {new Date(r.uploadedOn).toLocaleDateString()}
+                              </span>
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleFileSelect(null, r)}
+                            className="shrink-0 px-3 py-1.5 rounded-lg bg-[#096491] hover:bg-[#074e72] text-white font-semibold cursor-pointer"
+                          >
+                            Use this resume
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[11px] text-sky-800/80">
+                      Or upload a different file below.
+                    </p>
+                  </div>
+                )}
+
+                <ResumeImportDropzone onFileSelect={(f) => handleFileSelect(f)} />
 
                 <div className="flex justify-end pt-2">
                   <button
@@ -207,6 +254,7 @@ export function ResumeImportModal({
             {stage === "review" && importResult && (
               <ResumeImportReview
                 importResult={importResult}
+                existingData={existingData}
                 onApply={handleConfirmApply}
                 onCancel={onClose}
               />

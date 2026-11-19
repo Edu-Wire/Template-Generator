@@ -128,3 +128,16 @@ Assisted with dataset curation.
   assert.strictEqual(result.personal.address, undefined);
   assert.strictEqual(result.personal.passportNumber, undefined);
 });
+
+test("Deterministic Parser: phone is never taken from digits inside a link, bullets are not headings", () => {
+  const text = `SHUBH MOTWANI
+Email: s@example.com | https://www.linkedin.com/in/shubh-motwani-960022205 | Phone: +91 6265430446
+SKILLS
+▪ Web Development and Design
+▪ HTML and CSS
+▪ Problem Solving`;
+  const r = parseDocumentDeterministically(text);
+  assert.ok(r.personal.phone?.replace(/\D/g, "").endsWith("6265430446"), `phone was ${r.personal.phone}`);
+  assert.equal(r.unknownSectionChunks.length, 0);
+  assert.equal(r.candidateData.skills?.length, 3);
+});
