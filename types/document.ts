@@ -264,6 +264,12 @@ export interface DocumentData {
   customSections?: CustomSectionEntry[];
   /** Custom section order chosen by counselor (excluding pinned personalDetails) */
   sectionOrder?: string[];
+  /**
+   * Section ids the counselor has just created but not filled yet. The
+   * interactive canvas shows an empty placeholder for them so they are visible
+   * straight away; exports ignore them.
+   */
+  pendingSections?: string[];
 }
 
 export const DEFAULT_MOVABLE_SECTION_ORDER: string[] = [

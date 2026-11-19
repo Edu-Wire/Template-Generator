@@ -134,6 +134,11 @@ export function documentReducer(
       const clearedPatch: Partial<DocumentData> = {
         sectionOrder: nextOrder,
       };
+      if (state.pendingSections) {
+        clearedPatch.pendingSections = state.pendingSections.filter(
+          (id) => id !== rawKey && id !== canonicalKey
+        );
+      }
 
       const listFields: ListKey[] = [
         "education",

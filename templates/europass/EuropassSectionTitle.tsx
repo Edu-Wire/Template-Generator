@@ -36,35 +36,30 @@ export function EuropassSectionTitle({
             data-pdf-ignore="true"
             data-no-print="true"
           >
-            {onAddEntry && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddEntry();
-                }}
-                className={styles.addSectionEntryBtn}
-                title={addLabel || `Add new entry to ${title}`}
-                data-html2canvas-ignore="true"
-                data-pdf-ignore="true"
-                data-no-print="true"
-                aria-label={addLabel || `Add new entry to ${title}`}
+            <button
+              type="button"
+              data-action="edit-section"
+              className={styles.editSectionBtn}
+              title={`Edit ${title} section`}
+              aria-label={`Edit ${title} section`}
+              data-html2canvas-ignore="true"
+              data-pdf-ignore="true"
+              data-no-print="true"
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="8" y1="2" x2="8" y2="14" />
-                  <line x1="2" y1="8" x2="14" y2="8" />
-                </svg>
-              </button>
-            )}
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
             {onDeleteSection && (
               <button
                 type="button"

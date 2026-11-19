@@ -131,6 +131,7 @@ export async function processResumeUpload(
   let mergedData: DocumentData;
   let ambiguousItems: import("@/features/document-generator/types/import").AmbiguousItem[] = [];
   let unmappedSnippets: string[] = [];
+  const warnings: string[] = [];
 
   if (embeddedDocumentData) {
     mergedData = {
@@ -149,6 +150,12 @@ export async function processResumeUpload(
 
     // 4. the AI model Semantic Classification (with retries & fallback)
     const aiResult = await classifyResumeWithAi(rawText);
+    if (!aiResult.success) {
+      warnings.push(
+        `The AI step could not read this resume${aiResult.errorMessage ? ` (${aiResult.errorMessage})` : ""}, so only a basic extraction was done. ` +
+          "Education, work experience, certifications, projects and achievements were NOT extracted. Please try the import again."
+      );
+    }
 
     // 5. Merge Deterministic + AI Results (AI takes precedence for lists, deterministic for contacts)
     mergedData = {
@@ -245,6 +252,7 @@ export async function processResumeUpload(
     ambiguousItems,
     crmConflicts,
     unmappedSnippets,
+    warnings: warnings.length > 0 ? warnings : undefined,
     gridfsFileId,
   };
 

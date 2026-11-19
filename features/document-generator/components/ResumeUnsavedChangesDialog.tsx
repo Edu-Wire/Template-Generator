@@ -29,7 +29,7 @@ export function ResumeUnsavedChangesDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="unsaved-changes-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
     >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4">
         <div className="flex items-center gap-3">
@@ -38,7 +38,7 @@ export function ResumeUnsavedChangesDialog({
           </div>
           <div>
             <h3 id="unsaved-changes-title" className="text-base font-semibold text-slate-900">
-              Unsaved Resume In Progress
+              Resume In Progress
             </h3>
             <p className="text-xs text-slate-500">
               You have active entries in your current editor.
@@ -47,8 +47,8 @@ export function ResumeUnsavedChangesDialog({
         </div>
 
         <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 border border-slate-200 rounded-xl p-3">
-          Importing a new resume will overwrite the current workspace. You can save your
-          current work as a draft first to avoid losing any progress.
+          Your existing CV details are kept. Importing only adds new information from the
+          uploaded file. You can still save your current work as a draft first.
         </p>
 
         <div className="space-y-2 pt-2">
@@ -66,7 +66,7 @@ export function ResumeUnsavedChangesDialog({
             onClick={onDiscardAndProceed}
             className="w-full py-2 px-4 rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span>Discard Current Resume & Import</span>
+            <span>Continue Without Saving</span>
           </button>
 
           <button

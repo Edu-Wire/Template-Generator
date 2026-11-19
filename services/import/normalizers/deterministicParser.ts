@@ -112,7 +112,8 @@ export function parseDocumentDeterministically(rawText: string): DeterministicPa
     personal.email = emails[0];
   }
 
-  const phones = headerBlock.match(PHONE_REGEX);
+  // Digits inside links (e.g. linkedin.com/in/name-960022205) are not phone numbers
+  const phones = headerBlock.replace(URL_REGEX, " ").match(PHONE_REGEX);
   if (phones && phones.length > 0) {
     // Filter out strings that look like years (e.g. 2020-2024)
     const validPhones = phones.filter((p) => p.replace(/\D/g, "").length >= 7 && !p.includes("2020") && !p.includes("2024"));
@@ -146,6 +147,8 @@ export function parseDocumentDeterministically(rawText: string): DeterministicPa
    */
   function looksLikeUnknownHeading(line: string): boolean {
     if (line.length < 3 || line.length > 60) return false;
+    // Bullet / list lines are content, never headings
+    if (/^[▪•·●◦■□\-*–—]/.test(line)) return false;
     // Contains digits mixed with text (dates) → not a heading
     if (/\d{4}/.test(line)) return false;
     // Sentence that ends with punctuation → body text
@@ -165,6 +168,13 @@ export function parseDocumentDeterministically(rawText: string): DeterministicPa
   let currentUnknownChunk: UnknownSectionChunk | null = null;
 
   for (const line of allLines) {
+    // The candidate's name and contact lines (before any section starts) are header details, not sections
+    if (!currentKnownChunk && !currentUnknownChunk) {
+      if (line === personal.fullName || line.includes("@") || /https?:\/\/|www\./i.test(line)) {
+        unmappedLines.push(line);
+        continue;
+      }
+    }
     const matched = SECTION_PATTERNS.find((pattern) => pattern.regex.test(line));
 
     if (matched) {

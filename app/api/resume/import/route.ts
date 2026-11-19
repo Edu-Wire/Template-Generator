@@ -4,6 +4,8 @@
  * Backend endpoint for Resume Document Import.
  * Accepts multipart/form-data:
  * - file: PDF or DOCX file blob (up to 8MB)
+ * - crmResumeUrl: alternative to `file` — URL of a resume already stored on the CRM record
+ *   (downloaded server-side with SSRF protections, same 8MB / PDF-or-DOCX rules)
  * - studentId: optional CRM student ID
  * - crmSnapshot: optional JSON string of active CRM profile
  *
@@ -13,6 +15,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { processResumeUpload } from "@/services/import/resumeImportService";
+import { fetchRemoteDocument } from "@/lib/net/safeDocumentFetch";
+import { ImageFetchError } from "@/lib/net/safeImageFetch";
 import { mapCrmToNormalizedStudent } from "@/services/normalization";
 import type { CrmSnapshot } from "@/types/crmSnapshot";
 import type { NormalizedStudentProfile } from "@/types/normalizedStudent";
@@ -54,55 +58,81 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+    const crmResumeUrl = (formData.get("crmResumeUrl") as string | null)?.trim() || null;
+    const crmResumeName = (formData.get("crmResumeName") as string | null)?.trim() || "CRM-Resume";
     const studentId = formData.get("studentId") as string | null;
     const rawCrmSnapshot = formData.get("crmSnapshot") as string | null;
 
-    if (!file) {
-      return NextResponse.json(
-        { success: false, error: "No resume file was uploaded." },
-        { status: 400 }
-      );
-    }
+    let fileName: string;
+    let mimeType: string;
+    let buffer: Buffer;
 
-    const fileName = sanitizeFilename(file.name);
-    const mimeType = file.type || "application/octet-stream";
+    if (!file && crmResumeUrl) {
+      // Resume already stored in the CRM: authenticate first, then download it server-side.
+      const preAuth = await requireSession(req, { studentId });
+      if (preAuth.response) return preAuth.response;
+      try {
+        const remote = await fetchRemoteDocument(crmResumeUrl);
+        buffer = remote.body;
+        fileName = `${sanitizeFilename(crmResumeName).replace(/\.(pdf|docx)$/i, "") || "CRM-Resume"}.${remote.kind}`;
+        mimeType =
+          remote.kind === "pdf"
+            ? "application/pdf"
+            : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      } catch (err) {
+        if (err instanceof ImageFetchError) {
+          return NextResponse.json({ success: false, error: err.message }, { status: err.status });
+        }
+        throw err;
+      }
+    } else {
+      if (!file) {
+        return NextResponse.json(
+          { success: false, error: "No resume file was uploaded." },
+          { status: 400 }
+        );
+      }
 
-    // 1. Extension check
-    const isPdf = fileName.toLowerCase().endsWith(".pdf");
-    const isDocx = fileName.toLowerCase().endsWith(".docx");
-    if (!isPdf && !isDocx) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Unsupported file type. Please upload a PDF or DOCX file.",
-        },
-        { status: 400 }
-      );
-    }
+      fileName = sanitizeFilename(file.name);
+      mimeType = file.type || "application/octet-stream";
 
-    // 2. Size limit check
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `File size exceeds the 8MB limit (uploaded: ${(file.size / 1024 / 1024).toFixed(1)}MB).`,
-        },
-        { status: 400 }
-      );
-    }
+      // 1. Extension check
+      const isPdf = fileName.toLowerCase().endsWith(".pdf");
+      const isDocx = fileName.toLowerCase().endsWith(".docx");
+      if (!isPdf && !isDocx) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Unsupported file type. Please upload a PDF or DOCX file.",
+          },
+          { status: 400 }
+        );
+      }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+      // 2. Size limit check
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `File size exceeds the 8MB limit (uploaded: ${(file.size / 1024 / 1024).toFixed(1)}MB).`,
+          },
+          { status: 400 }
+        );
+      }
 
-    // 3. Magic bytes validation
-    if (!isValidMagicBytes(buffer, mimeType, fileName)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "The file format does not match its extension. Please upload a genuine PDF or DOCX.",
-        },
-        { status: 400 }
-      );
+      const arrayBuffer = await file.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+
+      // 3. Magic bytes validation
+      if (!isValidMagicBytes(buffer, mimeType, fileName)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "The file format does not match its extension. Please upload a genuine PDF or DOCX.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // 4. Parse CRM student profile if provided

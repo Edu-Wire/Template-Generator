@@ -34,6 +34,7 @@ import { ResumeInteractiveSection } from "@/features/document-generator/componen
 import { RESUME_SECTION_METADATA } from "@/features/document-generator/components/ResumeSectionSidebar";
 import { parseDescriptionToBullets, stripLeadingMarkers } from "./utils/descriptionParser";
 import { useDocumentState } from "@/features/document-generator/hooks/useDocumentState";
+import { requestSectionEditor } from "./sections/PendingSectionForm";
 
 interface EuropassTemplateProps {
   data: DocumentData;
@@ -102,6 +103,24 @@ function arePagesEqual(
       )
   );
 }
+
+const PENDING_SECTION_TITLES: Record<string, string> = {
+  aboutMe: "ABOUT ME",
+  education: "EDUCATION AND TRAINING",
+  internships: "WORK EXPERIENCE / INTERNSHIPS",
+  academicProjects: "ACADEMIC PROJECTS",
+  achievements: "ACHIEVEMENTS & AWARDS",
+  leadershipActivities: "LEADERSHIP & EXTRACURRICULAR",
+  volunteering: "VOLUNTEERING / COMMUNITY ENGAGEMENT",
+  certifications: "CERTIFICATIONS",
+  languages: "LANGUAGE SKILLS",
+  englishCertificate: "ENGLISH LANGUAGE CERTIFICATE",
+  skills: "SKILLS",
+  hobbies: "HOBBIES AND INTERESTS",
+  recommendations: "RECOMMENDATIONS",
+  academicInterests: "ACADEMIC INTERESTS",
+  declaration: "DECLARATION",
+};
 
 export const EUROPASS_DEFAULT_SECTION_ORDER: string[] = [
   "aboutMe",
@@ -332,6 +351,54 @@ export function EuropassTemplate({
     [englishCertificate]
   );
 
+  // Newly created sections that are still empty: shown as a placeholder on the
+  // interactive canvas only (never in exports) so the section is visible immediately.
+  const pendingKey = useMemo(() => {
+    if (!isInteractive) return "";
+    const hasContent: Record<string, boolean> = {
+      aboutMe: aboutMe.trim().length > 0,
+      education: educationEntries.length > 0,
+      internships: internshipEntries.length > 0,
+      academicProjects: projectEntries.length > 0,
+      achievements: achievementEntries.length > 0,
+      leadershipActivities: leadershipEntries.length > 0,
+      volunteering: volunteeringEntries.length > 0,
+      certifications: certificationEntries.length > 0,
+      languages: hasLanguages,
+      englishCertificate: hasEnglishCert,
+      skills: skillEntries.length > 0,
+      hobbies: hobbyEntries.length > 0,
+      recommendations: (recommendations?.length ?? 0) > 0,
+      academicInterests: (academicInterests?.length ?? 0) > 0,
+      declaration: declaration.trim().length > 0,
+    };
+    return (data.pendingSections ?? [])
+      .filter((id) => id in hasContent && !hasContent[id])
+      .join("|");
+  }, [
+    isInteractive,
+    data.pendingSections,
+    aboutMe,
+    educationEntries.length,
+    internshipEntries.length,
+    projectEntries.length,
+    achievementEntries.length,
+    leadershipEntries.length,
+    volunteeringEntries.length,
+    certificationEntries.length,
+    hasLanguages,
+    hasEnglishCert,
+    skillEntries.length,
+    hobbyEntries.length,
+    recommendations,
+    academicInterests,
+    declaration,
+  ]);
+  const pendingEmptyIds = useMemo(
+    () => new Set(pendingKey ? pendingKey.split("|") : []),
+    [pendingKey]
+  );
+
   const movableOrder = useMemo(() => {
     const custom = data.sectionOrder;
     const isGenericDefault =
@@ -353,6 +420,14 @@ export function EuropassTemplate({
     const allItems: PageItemAssignment[] = [];
 
     for (const secId of movableOrder) {
+      if (pendingEmptyIds.has(secId)) {
+        allItems.push({
+          key: `pending_${secId}`,
+          secKey: `pending_${secId}`,
+          title: PENDING_SECTION_TITLES[secId],
+        });
+        continue;
+      }
       switch (secId) {
         case "aboutMe":
         case "about":
@@ -543,6 +618,7 @@ export function EuropassTemplate({
     return pages;
   }, [
     movableOrder,
+    pendingEmptyIds,
     aboutMe,
     academicInterests,
     motherTongue,
@@ -578,6 +654,53 @@ export function EuropassTemplate({
 
   const renderPageItem = useCallback(
     (item: PageItemAssignment) => {
+      if (item.secKey.startsWith("pending_")) {
+        const pendingId = item.secKey.slice("pending_".length);
+        return (
+          <section key={item.key} className={styles.sectionWrapper}>
+            <EuropassSectionTitle
+              title={item.title || PENDING_SECTION_TITLES[pendingId] || pendingId.toUpperCase()}
+              isInteractive={isInteractive}
+              onDeleteSection={() => deleteSection(pendingId)}
+            />
+            <div
+              data-html2canvas-ignore="true"
+              data-pdf-ignore="true"
+              data-no-print="true"
+              style={{
+                margin: "4px 0 6px",
+                padding: "10px 12px",
+                border: "1px dashed #9db4d6",
+                borderRadius: 6,
+                background: "#f5f8fd",
+                color: "#6b7a90",
+                fontSize: "10pt",
+                fontStyle: "italic",
+              }}
+            >
+              This section is empty. Share the details in the AI chat to fill it in, or{" "}
+                  <button
+                    type="button"
+                    onClick={() => requestSectionEditor({ sectionId: pendingId, mode: "edit" })}
+                    style={{
+                      font: "inherit",
+                      fontStyle: "normal",
+                      fontWeight: 600,
+                      color: "#1d4ed8",
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    fill it in manually
+                  </button>
+                  .
+            </div>
+          </section>
+        );
+      }
       switch (item.secKey) {
         case "about":
         case "aboutMe":
@@ -1345,6 +1468,10 @@ export function EuropassTemplate({
 
     // Sequence of sections to place, dynamically determined by movableOrder:
     for (const secId of movableOrder) {
+      if (pendingEmptyIds.has(secId)) {
+        placeAtomic(`pending_${secId}`, PENDING_SECTION_TITLES[secId]);
+        continue;
+      }
       switch (secId) {
         case "aboutMe":
         case "about":
@@ -1441,6 +1568,7 @@ export function EuropassTemplate({
     );
   }, [
     movableOrder,
+    pendingEmptyIds,
     aboutMe,
     academicInterests,
     motherTongue,
@@ -1702,14 +1830,30 @@ export function EuropassTemplate({
 
               return (
                 <Fragment key={item.key}>
-                  <ResumeInteractiveSection
-                    sectionId={canonicalKey}
-                    title={meta.title}
-                    isSelected={activeSectionId === canonicalKey}
-                    onEdit={() => onSelectSection?.(canonicalKey)}
+                  {/* "+" and pencil on a section title open the paste-style section editor */}
+                  <div
+                    style={{ display: "contents" }}
+                    onClickCapture={(e) => {
+                      const target = e.target as HTMLElement;
+                      const editorId = canonicalKey.replace(/^pending_/, "");
+                      if (!(editorId in PENDING_SECTION_TITLES)) return;
+                      const isAdd = Boolean(target.closest(`.${styles.addSectionEntryBtn}`));
+                      const isEdit = Boolean(target.closest('[data-action="edit-section"]'));
+                      if (!isAdd && !isEdit) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      requestSectionEditor({ sectionId: editorId, mode: isAdd ? "add" : "edit" });
+                    }}
                   >
-                    {content}
-                  </ResumeInteractiveSection>
+                    <ResumeInteractiveSection
+                      sectionId={canonicalKey}
+                      title={meta.title}
+                      isSelected={activeSectionId === canonicalKey}
+                      onEdit={() => onSelectSection?.(canonicalKey)}
+                    >
+                      {content}
+                    </ResumeInteractiveSection>
+                  </div>
                 </Fragment>
               );
             })}

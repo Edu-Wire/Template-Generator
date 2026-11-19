@@ -19,18 +19,23 @@ import type {
   ResumeImportResult,
   CrmConflictItem,
   AmbiguousItem,
+  ImportOverrides,
 } from "../types/import";
+import { mergeImportedIntoCv } from "../utils/mergeImportedCv";
 import { generateId } from "@/lib/generateId";
 import { PhotoCropModal } from "../photo/PhotoCropModal";
 
 interface ResumeImportReviewProps {
   importResult: ResumeImportResult;
-  onApply: (finalData: DocumentData) => void;
+  /** CV that is already stored/open. When present, the upload is merged into it and nothing stored is overwritten. */
+  existingData?: DocumentData | null;
+  onApply: (finalData: DocumentData, overrides?: ImportOverrides) => void;
   onCancel: () => void;
 }
 
 export function ResumeImportReview({
   importResult,
+  existingData,
   onApply,
   onCancel,
 }: ResumeImportReviewProps) {
@@ -54,6 +59,21 @@ export function ResumeImportReview({
   const [crmConflicts, setCrmConflicts] = useState<CrmConflictItem[]>(
     importResult.crmConflicts || []
   );
+
+  // Fields the counsellor explicitly chose to take from the upload (everything else stored stays as-is)
+  const personalFieldKeys = ["fullName", "email", "phone", "nationality", "passportNumber"];
+  const overrides: ImportOverrides = {
+    personalFields: crmConflicts
+      .filter((c) => c.resolution !== "USE_CRM" && personalFieldKeys.includes(c.field))
+      .map((c) => c.field),
+    englishScore: crmConflicts.some((c) => c.field === "englishScore" && c.resolution !== "USE_CRM"),
+  };
+  const mergePreview = existingData
+    ? mergeImportedIntoCv(existingData, data, {
+        overridePersonalFields: overrides.personalFields,
+        overrideEnglishScore: overrides.englishScore,
+      }).summary
+    : null;
 
   const [cropOpen, setCropOpen] = useState(false);
   const [cropImg, setCropImg] = useState<HTMLImageElement | null>(null);
@@ -297,6 +317,46 @@ export function ResumeImportReview({
         {/* TAB 1: OVERVIEW */}
         {activeTab === "overview" && (
           <div className="space-y-5">
+            {(importResult.warnings ?? []).map((w, i) => (
+              <div key={i} className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 flex gap-2">
+                <span>⚠️</span>
+                <span>{w}</span>
+              </div>
+            ))}
+            {/* What will happen to the stored CV */}
+            {mergePreview && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider">
+                  What will be added to your CV
+                </h4>
+                <p className="text-xs text-emerald-800 mt-0.5">
+                  Your existing details stay exactly as they are. Only new information from the uploaded CV is added.
+                </p>
+                <ul className="mt-3 divide-y divide-emerald-100 text-xs bg-white rounded-lg border border-emerald-100">
+                  {mergePreview.map((item) => (
+                    <li key={item.key} className="px-3 py-2 flex items-center justify-between gap-3">
+                      <span className="font-semibold text-slate-800">{item.label}</span>
+                      <span className="text-right text-slate-600">
+                        {item.added > 0 ? (
+                          <span className="font-semibold text-emerald-700">
+                            + {item.added} new
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">nothing new</span>
+                        )}
+                        {item.kept > 0 && <span> · {item.kept} already in CV (kept)</span>}
+                        {item.duplicates > 0 && item.added === 0 && item.kept === 0 && <span> · already in CV</span>}
+                        {item.duplicates > 0 && item.kept > 0 && <span> · {item.duplicates} skipped as duplicate</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11px] text-emerald-800/80 mt-2">
+                  Use the Direct Editor tab to remove anything you do not want added before applying.
+                </p>
+              </div>
+            )}
+
             {/* CRM Conflict Alert if any */}
             {crmConflicts.length > 0 && (
               <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-start justify-between gap-3">
@@ -372,7 +432,7 @@ export function ResumeImportReview({
                     <span className="font-semibold text-slate-800">Personal Details</span>
                   </div>
                   <div className="flex items-center gap-2.5 max-w-sm">
-                    {data.personal?.photoUrl && !reviewPhotoError && (
+                    {!existingData && data.personal?.photoUrl && !reviewPhotoError && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={data.personal.photoUrl}
@@ -638,7 +698,14 @@ export function ResumeImportReview({
                 <div className="space-y-3">
                   <h4 className="font-bold text-slate-900">Personal Details</h4>
 
-                  {/* Photo Management Card */}
+                  {existingData && (
+                    <p className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      The profile photo comes from the CRM record and is not changed by this import. Fields that already
+                      have a value in the CV are kept; only empty ones are filled from the resume.
+                    </p>
+                  )}
+                  {/* Photo Management Card (only when there is no stored CV to merge into) */}
+                  {!existingData && (
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
                     <div className="w-12 h-12 rounded-full bg-white border border-slate-300 overflow-hidden flex items-center justify-center flex-shrink-0">
                       {data.personal?.photoUrl && !reviewPhotoError ? (
@@ -709,6 +776,7 @@ export function ResumeImportReview({
                       onChange={handlePhotoUpload}
                     />
                   </div>
+                  )}
 
                   <div>
                     <label className="text-slate-600 block mb-1">Full Name</label>
@@ -1084,11 +1152,11 @@ export function ResumeImportReview({
 
         <button
           type="button"
-          onClick={() => onApply(data)}
+          onClick={() => onApply(data, overrides)}
           className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs flex items-center gap-2 cursor-pointer"
         >
           <span>✓</span>
-          <span>Apply to Resume Editor</span>
+          <span>{existingData ? "Add to CV" : "Apply to Resume Editor"}</span>
         </button>
       </div>
 
