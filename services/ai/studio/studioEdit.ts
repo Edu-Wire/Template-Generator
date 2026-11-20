@@ -70,7 +70,7 @@ Rules — follow all of them:
 13. CV ENTRY STRUCTURE: In CV sections, the first lines of each entry (job title or degree, then "Organisation [ dates ]") are structured data used by the layout. Keep those lines exactly as they are; rewrite only the description lines / bullets under them. Keep "•" bullets as bullets.
 14. FOLLOW-UPS: A short follow-up ("shorter", "more formal", "again", "another version", "simpler", "undo the tone") refers to the section(s) you changed in your previous reply in the conversation; apply it there.
 15. CONVERSATION STYLE (like ChatGPT): Write "reply" as a friendly, natural message to the counsellor. When you edited, briefly say what you improved — one short bullet per changed section if more than one — then offer ONE useful next step as a question (e.g. "Want me to make the work experience bullets more results-focused?"). When you answer a question or give advice without editing, answer fully and helpfully, as ChatGPT would. Never write boilerplate like "All other sections remain unchanged".
-16. ENHANCING MEANS REWORDING: "Enhance", "improve", "polish" and similar mean rewording what is already written so it reads better. Never add sentences that introduce new subjects, interests, passions, strengths, achievements, responsibilities or results that are not stated in the document, the verified profile, or the counsellor's message. Never append commentary lines to data sections (scores, language levels, certificates, skills lists). An empty section is only drafted when asked, or for ABOUT ME / summary, and only from verified facts. Do not add a description line to a CV entry that has none. Do not infer subjects, streams or specialisations (e.g. "science and mathematics", "commerce", "computer science") from a qualification or target course — mention them only if they are written in the document, the profile or the message.
+16. ENHANCING MEANS REWORDING: "Enhance", "improve", "polish" and similar mean rewording what is already written so it reads better. Never add sentences that introduce new subjects, interests, passions, strengths, achievements, responsibilities or results that are not stated in the document, the verified profile, or the counsellor's message. Never append commentary lines to data sections (scores, language levels, certificates, skills lists). An empty section is only drafted when asked, or for ABOUT ME / summary, and only from verified facts. Do not add a description line to a CV entry that has none. When enhancing a CV entry, return EXACTLY as many bullets/lines as it already has, reworded one-to-one — never add an extra bullet (for example a "participated in…" or "collaborated with…" line) that is not already written. Do not infer subjects, streams or specialisations (e.g. "science and mathematics", "commerce", "computer science") from a qualification or target course — mention them only if they are written in the document, the profile or the message.
 Respond with ONE JSON object only:
 {"reply": "<your message to the counsellor, written as described in rule 15>",
  "sections": [{"heading": "<heading>", "content": "<full section text>"}, ...],   // the COMPLETE document after your edit, in order
@@ -130,6 +130,25 @@ export function cvReadOnlySections(req: Pick<StudioEditRequest, "docType" | "ins
 
 function nonEmptyLineCount(text: string): number {
   return text.split(/\r?\n/).filter((l) => l.trim()).length;
+}
+
+/**
+ * The model added lines to CV entries when it was only asked to reword. Per entry (blocks
+ * separated by blank lines), keep the first N lines it wrote, N = the original line count,
+ * so the rewrites survive and the extra lines go. If the entry blocks no longer line up
+ * with the original, the original is the safe answer.
+ */
+function trimAddedLines(original: string, produced: string): string {
+  const origBlocks = original.split(/\r?\n\s*\r?\n/).map((b) => b.trim()).filter(Boolean);
+  const prodBlocks = produced.split(/\r?\n\s*\r?\n/).map((b) => b.trim()).filter(Boolean);
+  if (origBlocks.length !== prodBlocks.length) return original;
+  return prodBlocks
+    .map((block, i) => {
+      const limit = nonEmptyLineCount(origBlocks[i]);
+      const lines = block.split(/\r?\n/).filter((l) => l.trim());
+      return lines.slice(0, limit).join("\n");
+    })
+    .join("\n\n");
 }
 
 /** Strips "Section 3:" / "### " style prefixes a model may echo back from the prompt layout. */
@@ -322,11 +341,16 @@ export function parseStudioResponse(raw: string, req: StudioEditRequest): Studio
       const heading = sanitizedSections[i].heading;
       const original = before.get(heading);
       if (original === undefined) continue;
+      if (readOnly.has(heading)) {
+        sanitizedSections[i] = { ...sanitizedSections[i], content: original };
+        continue;
+      }
       const padded =
         !mayAddLines &&
         CV_ENTRY_SECTION_RE.test(heading) &&
         nonEmptyLineCount(sanitizedSections[i].content) > nonEmptyLineCount(original);
-      if (readOnly.has(heading) || padded) sanitizedSections[i] = { ...sanitizedSections[i], content: original };
+      // Keep the rewritten lines, drop only the extra (invented) ones.
+      if (padded) sanitizedSections[i] = { ...sanitizedSections[i], content: trimAddedLines(original, sanitizedSections[i].content) };
     }
   }
 

@@ -85,7 +85,15 @@ export function parseDescriptionToBullets(raw: string): string[] {
   );
 
   if (manualBulletLines.length >= 1) {
-    const cleaned = cleanAndCap(manualBulletLines);
+    // A bullet that was hard-wrapped onto the next line (e.g. "...brand visibility" then
+    // "and consumer engagement.") continues the previous bullet; folding it in keeps all text.
+    const markerLines = new Set(manualBulletLines);
+    const folded: string[] = [];
+    for (const line of lines) {
+      if (markerLines.has(line)) folded.push(line);
+      else if (folded.length > 0) folded[folded.length - 1] += ` ${line}`;
+    }
+    const cleaned = cleanAndCap(folded);
     if (cleaned.length >= 1) return cleaned;
   }
 

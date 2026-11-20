@@ -128,8 +128,12 @@ export const AcademicProjectsSection = memo(function AcademicProjectsSection({
               )
             )}
 
-            {(isInteractive || project.skills) && (
-              <div className={styles.entrySubRow}>
+            {(isInteractive || project.skills?.trim()) && (
+              <div
+                className={styles.entrySubRow}
+                data-html2canvas-ignore={!project.skills?.trim() ? "true" : undefined}
+                data-pdf-ignore={!project.skills?.trim() ? "true" : undefined}
+              >
                 <span className={styles.institutionName}>Skills: </span>
                 {isInteractive && onUpdate ? (
                   <EditableText

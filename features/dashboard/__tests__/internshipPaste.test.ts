@@ -52,3 +52,33 @@ describe("internship paste (raw, un-normalized section text)", () => {
     assert.equal(legacy.internships?.[0].location, "Bangalore");
   });
 });
+
+describe("internship paste with ● bullets, wrapped lines and no blank line between jobs", () => {
+  const RAW = `Aditya Juices and Snacks
+Digital Marketing Consultant (Practicum) [ 2025 ]
+● Led a 3-month digital transformation initiative, planning and executing integrated social media campaigns that grew brand visibility
+and consumer engagement.
+● Built SEO-focused content and data-driven marketing strategies to strengthen customer acquisition and online brand presence.
+Marketing Intern | NALCO
+2025
+● Analyzed the aluminium industry landscape, evaluating NALCO's operations, marketing strategy, and competitive positioning.
+● Authored a formal report on industry structure and competition, presented to internal stakeholders at NALCO, Bhubaneswar.`;
+
+  it("keeps every line and splits the two jobs", () => {
+    const cv = syncSectionsToCvData([{ heading: "WORK EXPERIENCE", content: RAW }], createEmptyDocumentData());
+    assert.equal(cv.internships?.length, 2);
+    const [first, second] = cv.internships!;
+    assert.equal(first.role, "Digital Marketing Consultant (Practicum)");
+    assert.equal(first.company, "Aditya Juices and Snacks");
+    assert.ok(first.description?.includes("grew brand visibility and consumer engagement."));
+    assert.equal(first.description?.split("\n").length, 2);
+    assert.equal(second.role, "Marketing Intern");
+    assert.equal(second.company, "NALCO");
+    assert.equal(second.description?.split("\n").length, 2);
+  });
+
+  it("is stable when saved and opened again", () => {
+    const once = normalizeInternshipPaste(RAW);
+    assert.equal(normalizeInternshipPaste(once), once);
+  });
+});
