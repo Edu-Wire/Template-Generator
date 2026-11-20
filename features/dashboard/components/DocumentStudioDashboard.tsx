@@ -1002,6 +1002,13 @@ export function DocumentStudioDashboard() {
   const [editorMode, setEditorMode] = useState<"editing" | "preview">("editing");
   const [fontFamily, setFontFamily] = useState<string>("Calibri, Carlito, Aptos, 'Segoe UI', sans-serif");
   const [fontFamilyLabel, setFontFamilyLabel] = useState<string>("Calibri");
+  // Europass reference uses Open Sans at 9.97pt. While the toolbar is still on its
+  // generic defaults (Calibri / 11pt), render the Europass canvas with the reference font.
+  const europassFontFamily =
+    fontFamilyLabel === "Calibri"
+      ? "var(--font-open-sans), 'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+      : fontFamily;
+  const europassFontSize = fontSize === 11 ? 9.97 : fontSize;
   const [showFontMenu, setShowFontMenu] = useState(false);
   const [textColor, setTextColor] = useState<string>("#0f172a");
   const [showColorMenu, setShowColorMenu] = useState(false);
@@ -8208,11 +8215,11 @@ export function DocumentStudioDashboard() {
                         width: "210mm",
                         transform: `scale(${zoomLevel / 100})`,
                         transformOrigin: "top left",
-                        fontFamily,
+                        fontFamily: europassFontFamily,
                         color: textColor,
                         textAlign,
-                        "--europass-font-family": fontFamily,
-                        "--europass-font-size-base": `${fontSize}pt`,
+                        "--europass-font-family": europassFontFamily,
+                        "--europass-font-size-base": `${europassFontSize}pt`,
                         "--europass-text": textColor,
                         "--europass-text-dark": textColor,
                         "--europass-text-align": textAlign,

@@ -6,7 +6,7 @@ import { DocumentProvider } from "@/features/document-generator/state/DocumentCo
 
 const openSans = Open_Sans({
   subsets: ["latin"],
-  weight: ["300", "400", "600", "700"],
+  // Variable font: one file per style covers every weight (400/600/700 used by Europass).
   style: ["normal", "italic"],
   variable: "--font-open-sans",
   display: "swap",

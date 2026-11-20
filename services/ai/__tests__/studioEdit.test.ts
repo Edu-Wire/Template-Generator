@@ -132,3 +132,31 @@ describe("Replies never claim undone edits", () => {
     assert.match(r.reply, /kept \*\*DECLARATION\*\* exactly as it was/);
   });
 });
+
+describe("CV enhance with an invented extra bullet", () => {
+  it("keeps the rewritten bullets and drops only the extra bullet", () => {
+  const original = "UI/UX Designer Intern\nJayaris [ 3 Months ]\n• Designed websites.\n• Worked with clients.";
+  const req = {
+    docType: "CV",
+    instruction: "improve my professional experience",
+    sections: [{ heading: "PROFESSIONAL EXPERIENCE", content: original }],
+  };
+  const raw = JSON.stringify({
+    reply: "Improved.",
+    sections: [
+      {
+        heading: "PROFESSIONAL EXPERIENCE",
+        content:
+          "UI/UX Designer Intern\nJayaris [ 3 Months ]\n• Designed responsive websites with clear navigation.\n• Collaborated with clients to turn requirements into designs.\n• Joined team brainstorming sessions.",
+      },
+    ],
+    changedHeadings: ["PROFESSIONAL EXPERIENCE"],
+  });
+  const result = parseStudioResponse(raw, req);
+  const content = result.sections[0].content;
+  assert.ok(content.includes("Designed responsive websites with clear navigation."));
+  assert.ok(!content.includes("brainstorming"));
+  assert.equal(content.split("\n").length, 4);
+  assert.deepEqual(result.changedHeadings, ["PROFESSIONAL EXPERIENCE"]);
+  });
+});

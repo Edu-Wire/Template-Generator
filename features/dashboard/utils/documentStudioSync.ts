@@ -53,10 +53,13 @@ export function headingToSectionId(heading: string): string | null {
   const h = heading.toLowerCase();
   if (h.includes("about me") || h.includes("about")) return "aboutMe";
   if (h.includes("education") || h.includes("training")) return "education";
-  if (h.includes("work") || h.includes("internship") || h.includes("employment")) return "internships";
+  if (
+    h.includes("work") || h.includes("internship") || h.includes("employment") ||
+    (h.includes("experience") && !h.includes("leadership") && !h.includes("volunteer"))
+  ) return "internships";
   if (h.includes("english") || h.includes("ielts") || h.includes("toefl")) return "englishCertificate";
   if (h.includes("language")) return "languages";
-  if (h.includes("digital") || h.includes("skill")) return "skills";
+  if (h.includes("digital") || h.includes("skill") || h.includes("technical")) return "skills";
   if (h.includes("certification") || h.includes("certificate")) return "certifications";
   if (h.includes("academic interest") || (h.includes("interest") && !h.includes("hobb"))) return "academicInterests";
   if (h.includes("hobbi") || h.includes("interest")) return "hobbies";
@@ -67,6 +70,14 @@ export function headingToSectionId(heading: string): string | null {
   if (h.includes("recommendation") || h.includes("referee")) return "recommendations";
   if (h.includes("declaration") || h.includes("compliance") || h.includes("genuine")) return "declaration";
   return null;
+}
+
+/** Finds the studio section whose heading maps to the canonical section id. */
+function findSectionById<T extends { heading?: string }>(sections: T[], id: string): T | undefined {
+  return sections.find((s) => headingToSectionId(s.heading || "") === id);
+}
+function findSectionIndexById<T extends { heading?: string }>(sections: T[], id: string): number {
+  return sections.findIndex((s) => headingToSectionId(s.heading || "") === id);
 }
 
 /**
@@ -81,7 +92,7 @@ export function syncSectionsToCvData(
   const updatedCv: DocumentData = JSON.parse(JSON.stringify(baseCv));
 
   // 1. About Me
-  const aboutSec = sections.find((s) => s.heading?.toLowerCase().includes("about me"));
+  const aboutSec = findSectionById(sections, "aboutMe");
   if (aboutSec && aboutSec.content.trim()) {
     // Strip accidental contact/address line pollution from About Me summary
     const cleanAbout = aboutSec.content
@@ -98,12 +109,7 @@ export function syncSectionsToCvData(
   }
 
   // 2. Work Experience / Internships
-  const workSec = sections.find(
-    (s) =>
-      s.heading?.toLowerCase().includes("work experience") ||
-      s.heading?.toLowerCase().includes("internship") ||
-      s.heading?.toLowerCase().includes("employment")
-  );
+  const workSec = findSectionById(sections, "internships");
   if (workSec && workSec.content.trim()) {
     // Tolerate raw pasted text (markdown, "- " bullets, "Company | Role" headers) from any source
     const rawChunks = normalizeInternshipPaste(workSec.content).split(/\n\s*\n+/).filter(Boolean);
@@ -167,11 +173,7 @@ export function syncSectionsToCvData(
   }
 
   // 3. Education
-  const eduSec = sections.find(
-    (s) =>
-      s.heading?.toLowerCase().includes("education") ||
-      s.heading?.toLowerCase().includes("training")
-  );
+  const eduSec = findSectionById(sections, "education");
   if (eduSec && eduSec.content.trim()) {
     const entries = eduSec.content.split(/\n\n+/).filter(Boolean);
     updatedCv.education = entries.map((entryStr, idx) => {
@@ -217,12 +219,7 @@ export function syncSectionsToCvData(
   }
 
   // 4. English Language Certificate
-  const engSec = sections.find(
-    (s) =>
-      s.heading?.toLowerCase().includes("english language certificate") ||
-      s.heading?.toLowerCase().includes("ielts") ||
-      s.heading?.toLowerCase().includes("language certificate")
-  );
+  const engSec = findSectionById(sections, "englishCertificate");
   if (engSec && engSec.content.trim()) {
     const content = engSec.content;
     const bandMatch = content.match(/(?:Overall Band Score|Overall|Band|Score)\s*[-:]\s*([0-9.]+)/i);
@@ -253,11 +250,7 @@ export function syncSectionsToCvData(
   }
 
   // 5. Skills
-  const skillsSecs = sections.filter(
-    (s) =>
-      s.heading?.toLowerCase().includes("skill") &&
-      !s.heading?.toLowerCase().includes("language")
-  );
+  const skillsSecs = sections.filter((s) => headingToSectionId(s.heading || "") === "skills");
   const skillsSec = skillsSecs.find((s) => s.content && s.content.trim().length > 0) || skillsSecs[0];
   if (skillsSec && skillsSec.content.trim()) {
     const skillList = skillsSec.content
@@ -275,13 +268,7 @@ export function syncSectionsToCvData(
   }
 
   // 6. Certifications
-  const certSec = sections.find(
-    (s) =>
-      (s.heading?.toLowerCase().includes("certification") || s.heading?.toLowerCase().includes("certificate")) &&
-      !s.heading?.toLowerCase().includes("english") &&
-      !s.heading?.toLowerCase().includes("ielts") &&
-      !s.heading?.toLowerCase().includes("toefl")
-  );
+  const certSec = findSectionById(sections, "certifications");
   if (certSec && certSec.content.trim()) {
     const rawChunks = certSec.content.split(/\n\s*\n+/).filter(Boolean);
     const consolidatedEntries: string[] = [];
@@ -342,7 +329,7 @@ export function syncSectionsToCvData(
   }
 
   // 7. Hobbies
-  const hobbySec = sections.find((s) => s.heading?.toLowerCase().includes("hobbies"));
+  const hobbySec = findSectionById(sections, "hobbies");
   if (hobbySec && hobbySec.content.trim()) {
     const hobbiesList = hobbySec.content
       .split(/[•,\n]+/)
@@ -359,12 +346,7 @@ export function syncSectionsToCvData(
   }
 
   // 8. Declaration / Visa Compliance Intent
-  const declSec = sections.find(
-    (s) =>
-      s.heading?.toLowerCase().includes("declaration") ||
-      s.heading?.toLowerCase().includes("compliance") ||
-      s.heading?.toLowerCase().includes("genuine")
-  );
+  const declSec = findSectionById(sections, "declaration");
   if (declSec && declSec.content.trim()) {
     updatedCv.declaration = declSec.content;
   } else if (declSec && !declSec.content.trim()) {
@@ -377,12 +359,7 @@ export function syncSectionsToCvData(
   }
 
   // 9. Language Skills & Mother Tongue
-  const langSec = sections.find(
-    (s) =>
-      s.heading?.toLowerCase().includes("language") &&
-      !s.heading?.toLowerCase().includes("certificate") &&
-      !s.heading?.toLowerCase().includes("ielts")
-  );
+  const langSec = findSectionById(sections, "languages");
   if (langSec && langSec.content.trim()) {
     const raw = langSec.content;
     const mtMatch =
@@ -451,9 +428,7 @@ export function syncSectionsToCvData(
   }
 
   // 11. Academic Projects
-  const projSec = sections.find(
-    (s) => s.heading?.toLowerCase().includes("project")
-  );
+  const projSec = findSectionById(sections, "academicProjects");
   if (projSec && projSec.content.trim()) {
     const entries = projSec.content.split(/\n\n+/).filter(Boolean);
     updatedCv.academicProjects = entries.map((entryStr, idx) => {
@@ -468,9 +443,7 @@ export function syncSectionsToCvData(
   }
 
   // 12. Achievements & Awards
-  const achSec = sections.find(
-    (s) => s.heading?.toLowerCase().includes("achievement") || s.heading?.toLowerCase().includes("award")
-  );
+  const achSec = findSectionById(sections, "achievements");
   if (achSec && achSec.content.trim()) {
     const entries = achSec.content.split(/[•\n]+/).map((l) => l.trim()).filter(Boolean);
     updatedCv.achievements = entries.map((ach, idx) => ({
@@ -480,11 +453,7 @@ export function syncSectionsToCvData(
   }
 
   // 13. Leadership & Responsibilities
-  const leaderSec = sections.find(
-    (s) =>
-      s.heading?.toLowerCase().includes("leadership") ||
-      s.heading?.toLowerCase().includes("responsibilit")
-  );
+  const leaderSec = findSectionById(sections, "leadershipActivities");
   if (leaderSec && leaderSec.content.trim()) {
     const entries = leaderSec.content.split(/\n\n+/).filter(Boolean);
     updatedCv.leadershipActivities = entries.map((entryStr, idx) => {
@@ -507,11 +476,7 @@ export function syncSectionsToCvData(
   }
 
   // 14. Academic Interests
-  const interestSec = sections.find(
-    (s) =>
-      s.heading?.toLowerCase().includes("academic interest") ||
-      (s.heading?.toLowerCase().includes("interest") && !s.heading?.toLowerCase().includes("hobb"))
-  );
+  const interestSec = findSectionById(sections, "academicInterests");
   if (interestSec && interestSec.content.trim()) {
     const hasLines = /[\n•]/.test(interestSec.content);
     // A pasted prose paragraph (full sentences) stays whole; only short comma lists are split.
@@ -532,9 +497,7 @@ export function syncSectionsToCvData(
   }
 
   // 15. Volunteering
-  const volSec = sections.find(
-    (s) => s.heading?.toLowerCase().includes("volunteer") || s.heading?.toLowerCase().includes("community")
-  );
+  const volSec = findSectionById(sections, "volunteering");
   if (volSec && volSec.content.trim()) {
     const entries = volSec.content.split(/\n\n+/).filter(Boolean);
     updatedCv.volunteering = entries.map((entryStr, idx) => {
@@ -561,9 +524,7 @@ export function syncSectionsToCvData(
   }
 
   // 16. Recommendations
-  const recSec = sections.find(
-    (s) => s.heading?.toLowerCase().includes("recommendation") || s.heading?.toLowerCase().includes("referee")
-  );
+  const recSec = findSectionById(sections, "recommendations");
   if (recSec && recSec.content.trim()) {
     const entries = recSec.content.split(/\n\n+/).filter(Boolean);
     updatedCv.recommendations = entries.map((entryStr, idx) => {
@@ -645,18 +606,13 @@ export function syncCvDataToSections(
   const sections = existingSections.map((s) => ({ ...s }));
 
   // 1. About Me
-  const aboutIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("about me"));
+  const aboutIdx = findSectionIndexById(sections, "aboutMe");
   if (cv.aboutMe !== undefined && aboutIdx >= 0) {
     sections[aboutIdx].content = cv.aboutMe || "";
   }
 
   // 2. Work Experience / Internships
-  const workIdx = sections.findIndex(
-    (s) =>
-      s.heading?.toLowerCase().includes("work experience") ||
-      s.heading?.toLowerCase().includes("internship") ||
-      s.heading?.toLowerCase().includes("employment")
-  );
+  const workIdx = findSectionIndexById(sections, "internships");
   if (cv.internships !== undefined && workIdx >= 0) {
     const validInternships = (cv.internships || []).filter(
       (e) => e.role && e.role.length < 100 && (e.company || e.description)
@@ -682,11 +638,7 @@ export function syncCvDataToSections(
   }
 
   // 3. Education
-  const eduIdx = sections.findIndex(
-    (s) =>
-      s.heading?.toLowerCase().includes("education") ||
-      s.heading?.toLowerCase().includes("training")
-  );
+  const eduIdx = findSectionIndexById(sections, "education");
   if (cv.education !== undefined && eduIdx >= 0) {
     const validEdu = sortEducationEntries(
       (cv.education || []).filter((e) => e.qualification || e.institution)
@@ -725,7 +677,7 @@ export function syncCvDataToSections(
   }
 
   // 4. Skills
-  let skillsIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("skill"));
+  let skillsIdx = findSectionIndexById(sections, "skills");
   if (cv.skills && cv.skills.length > 0 && skillsIdx < 0) {
     const declIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("declaration"));
     const insertPos = declIdx >= 0 ? declIdx : sections.length;
@@ -743,19 +695,13 @@ export function syncCvDataToSections(
   }
 
   // 5. Hobbies
-  const hobbiesIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("hobb"));
+  const hobbiesIdx = findSectionIndexById(sections, "hobbies");
   if (cv.hobbies !== undefined && hobbiesIdx >= 0) {
     sections[hobbiesIdx].content = (cv.hobbies || []).map((h) => h.name).filter(Boolean).join(" • ");
   }
 
   // 6. Certifications
-  let certsIdx = sections.findIndex(
-    (s) =>
-      (s.heading?.toLowerCase().includes("certification") || s.heading?.toLowerCase().includes("certificate")) &&
-      !s.heading?.toLowerCase().includes("english") &&
-      !s.heading?.toLowerCase().includes("ielts") &&
-      !s.heading?.toLowerCase().includes("toefl")
-  );
+  let certsIdx = findSectionIndexById(sections, "certifications");
   if (cv.certifications && cv.certifications.length > 0 && certsIdx < 0) {
     const declIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("declaration"));
     const insertPos = declIdx >= 0 ? declIdx : sections.length;
@@ -772,7 +718,7 @@ export function syncCvDataToSections(
   }
 
   // 7. Languages
-  let langIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("language") && !s.heading?.toLowerCase().includes("certificate"));
+  let langIdx = findSectionIndexById(sections, "languages");
   if ((cv.motherTongue || (cv.languages && cv.languages.length > 0)) && langIdx < 0) {
     const declIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("declaration"));
     const insertPos = declIdx >= 0 ? declIdx : sections.length;
@@ -788,7 +734,7 @@ export function syncCvDataToSections(
   }
 
   // 8. Academic Projects
-  let projIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("project"));
+  let projIdx = findSectionIndexById(sections, "academicProjects");
   if (cv.academicProjects && cv.academicProjects.length > 0 && projIdx < 0) {
     const declIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("declaration"));
     const insertPos = declIdx >= 0 ? declIdx : sections.length;
@@ -802,7 +748,7 @@ export function syncCvDataToSections(
   }
 
   // 9. Academic Interests
-  const intIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("academic interest") || (s.heading?.toLowerCase().includes("interest") && !s.heading?.toLowerCase().includes("hobb")));
+  const intIdx = findSectionIndexById(sections, "academicInterests");
   if (cv.academicInterests !== undefined && intIdx >= 0) {
     sections[intIdx].content = (cv.academicInterests || [])
       .map((i) => (i.name ? `• ${i.name.replace(/^[•\-*0-9.)\s]+/, "").trim()}` : ""))
@@ -811,13 +757,13 @@ export function syncCvDataToSections(
   }
 
   // 10. Achievements & Awards
-  const achIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("achievement") || s.heading?.toLowerCase().includes("award"));
+  const achIdx = findSectionIndexById(sections, "achievements");
   if (cv.achievements !== undefined && achIdx >= 0) {
     sections[achIdx].content = (cv.achievements || []).map((a) => a.title).filter(Boolean).join("\n");
   }
 
   // 11. Leadership & Extracurricular
-  const leadIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("leadership") || s.heading?.toLowerCase().includes("responsibilit") || s.heading?.toLowerCase().includes("extracurricular"));
+  const leadIdx = findSectionIndexById(sections, "leadershipActivities");
   if (cv.leadershipActivities !== undefined && leadIdx >= 0) {
     sections[leadIdx].content = (cv.leadershipActivities || [])
       .map((l) => [l.activity, [l.organisation, l.duration ? `[ ${l.duration} ]` : null].filter(Boolean).join(" "), l.description].filter(Boolean).join("\n"))
@@ -825,7 +771,7 @@ export function syncCvDataToSections(
   }
 
   // 12. Volunteering
-  const volIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("volunteer") || s.heading?.toLowerCase().includes("community"));
+  const volIdx = findSectionIndexById(sections, "volunteering");
   if (cv.volunteering !== undefined && volIdx >= 0) {
     sections[volIdx].content = (cv.volunteering || [])
       .map((v) => [v.role, [v.organization, v.startDate || v.endDate ? `[ ${v.startDate || ""} – ${v.endDate || ""} ]` : null].filter(Boolean).join(" "), v.description].filter(Boolean).join("\n"))
@@ -833,7 +779,7 @@ export function syncCvDataToSections(
   }
 
   // 13. Recommendations
-  const recIdx = sections.findIndex((s) => s.heading?.toLowerCase().includes("recommendation") || s.heading?.toLowerCase().includes("referee"));
+  const recIdx = findSectionIndexById(sections, "recommendations");
   if (cv.recommendations !== undefined && recIdx >= 0) {
     sections[recIdx].content = (cv.recommendations || [])
       .map((r) => [r.recommenderName, [r.recommenderTitle, r.organization].filter(Boolean).join(", "), r.text ? `"${r.text}"` : null].filter(Boolean).join("\n"))
@@ -897,16 +843,57 @@ export function syncCvDataToSections(
  * Cleans pasted work-experience text (markdown emphasis, "- " bullets, "Company | Role" headers)
  * into the "Role / Company [dates] / • bullets" layout that syncSectionsToCvData parses.
  */
+/** Words that mark a job title, used to tell "Role | Company" from "Company | Role". */
+const ROLE_WORD_RE =
+  /\b(?:intern|internship|trainee|apprentice|manager|consultant|analyst|developer|engineer|designer|executive|associate|assistant|officer|specialist|coordinator|director|scientist|architect|administrator|fellow|lead)\b/i;
+
 export function normalizeInternshipPaste(raw: string): string {
-  // Strip markdown emphasis and turn "- " / "* " list markers into bullets
+  // Strip markdown emphasis and turn "- " / "* " / "●" list markers into bullets
   const cleaned = raw
     .replace(/\*\*/g, "")
     .split("\n")
-    .map((l) => l.replace(/^\s*[-*•]\s+/, "• ").replace(/^\s*\*([^*].*?)\*\s*$/, "$1").trimEnd())
+    .map((l) =>
+      l
+        .replace(/^\s*[●◦▪•]\s*/, "• ")
+        .replace(/^\s*[-*]\s+/, "• ")
+        .replace(/^\s*\*([^*].*?)\*\s*$/, "$1")
+        .trimEnd()
+    )
     .join("\n");
+
+  // Entries pasted back-to-back (no blank line): a new entry starts at a non-bullet line that
+  // follows bullet text and is followed by a date line or a "Role [ dates ]" line. A wrapped
+  // bullet continuation ("and consumer engagement.") is followed by neither, so it stays.
+  const YEAR_RE = /(?:19|20)\d{2}|present|ongoing|current/i;
+  const looksLikeDateLine = (l: string) =>
+    l.length < 70 && !l.includes("|") && !/^•/.test(l) && YEAR_RE.test(l);
+  const separated: string[] = [];
+  for (const block of cleaned.split(/\n\s*\n+/)) {
+    const blockLines = block.split("\n");
+    let seenBullet = false;
+    blockLines.forEach((line, i) => {
+      const trimmed = line.trim();
+      const next = (blockLines[i + 1] || "").trim();
+      const isBullet = /^•/.test(trimmed);
+      const startsEntry =
+        seenBullet &&
+        !isBullet &&
+        trimmed.length > 0 &&
+        next.length > 0 &&
+        (looksLikeDateLine(next) || /\[[^\]]*(?:19|20)\d{2}[^\]]*\]/.test(next));
+      if (startsEntry) {
+        separated.push("");
+        seenBullet = false;
+      }
+      separated.push(line);
+      if (isBullet) seenBullet = true;
+    });
+    separated.push("");
+  }
+
   // Bullet-only blocks belong to the entry above them
   const merged: string[] = [];
-  for (const chunk of cleaned.split(/\n\s*\n+/).map((c) => c.trim()).filter(Boolean)) {
+  for (const chunk of separated.join("\n").split(/\n\s*\n+/).map((c) => c.trim()).filter(Boolean)) {
     if (/^•/.test(chunk) && merged.length > 0) merged[merged.length - 1] += "\n" + chunk;
     else merged.push(chunk);
   }
@@ -918,9 +905,27 @@ export function normalizeInternshipPaste(raw: string): string {
       const second = lines[1] || "";
       // Layout A: "Company | Role" / "dates" / bullets
       if (lines.length >= 2 && lines[0].includes("|") && !lines[0].includes("[") && isDateLine(second)) {
-        const [company, ...roleParts] = lines[0].split("|").map((p) => p.trim());
-        const role = roleParts.join(" ") || "Role";
+        const [first, ...restParts] = lines[0].split("|").map((p) => p.trim());
+        const rest = restParts.join(" ");
+        // "Marketing Intern | NALCO" is Role | Company; "Acme | Developer" is Company | Role.
+        const swap = ROLE_WORD_RE.test(first) && !ROLE_WORD_RE.test(rest);
+        const company = swap ? rest : first;
+        const role = (swap ? first : rest) || "Role";
         return [role, `${company} [ ${second} ]`, ...lines.slice(2)].join("\n");
+      }
+      // "Company" / "Role [ dates ]" / bullets  →  "Role" / "Company [ dates ]" / bullets
+      const secondDates = second.match(/\[\s*[^\]]+\s*\]/);
+      if (
+        lines.length >= 2 &&
+        secondDates &&
+        !lines[0].includes("|") &&
+        !lines[0].includes("[") &&
+        !/^[•\-*]/.test(lines[0]) &&
+        !ROLE_WORD_RE.test(lines[0]) &&
+        ROLE_WORD_RE.test(second.replace(secondDates[0], ""))
+      ) {
+        const roleOnly = second.replace(secondDates[0], "").trim();
+        return [roleOnly, `${lines[0]} ${secondDates[0]}`, ...lines.slice(2)].join("\n");
       }
       // Layout B: "Company, Location" / "Role | dates" / bullets
       const isCompanyFirst =
