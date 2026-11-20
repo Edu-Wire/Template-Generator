@@ -23,6 +23,7 @@ import {
   VerticalAlign,
   WidthType,
 } from "docx";
+import { parseLanguageSectionContent } from "@/features/dashboard/utils/languageSectionContent";
 import type { ExportSection } from "./coverLetterLayout";
 import type { DocumentData, PersonalDetails } from "@/types/document";
 import { syncCvDataToSections } from "@/features/dashboard/utils/documentStudioSync";
@@ -173,6 +174,51 @@ function formatCefrLine(line: string, font: string): TextRun[] {
     );
   }
   return runs;
+}
+
+/** Language Skills block: bold labels, blue language names, CEFR rows, guidance line. */
+function buildLanguageParagraphs(content: string, font: string): Paragraph[] | null {
+  const { motherTongues, others } = parseLanguageSectionContent(content);
+  if (motherTongues.length === 0 && others.length === 0) return null;
+  const out: Paragraph[] = [];
+  const label = (t: string) => new TextRun({ text: `${t} `, bold: true, font, size: 18, color: TEXT_MUTED });
+  const val = (t: string) => new TextRun({ text: t, font, size: 18, color: TEXT_DARK });
+  if (motherTongues.length) {
+    out.push(new Paragraph({ spacing: { after: 80 }, children: [label("Mother tongue(s):"), val(motherTongues.join(", "))] }));
+  }
+  if (others.length) {
+    out.push(new Paragraph({ spacing: { before: 60, after: 40 }, children: [label("Other language(s):")] }));
+  }
+  const row = (pairs: Array<[string, string | undefined]>) =>
+    new Paragraph({
+      spacing: { after: 30 },
+      children: pairs.flatMap(([k, v]) => [label(k), new TextRun({ text: `${v || "–"}  `, font, size: 18, color: TEXT_DARK })]),
+    });
+  let hasCefr = false;
+  for (const l of others) {
+    out.push(
+      new Paragraph({
+        spacing: { before: 60, after: 30 },
+        children: [new TextRun({ text: l.language ?? "", bold: true, font, size: 20, color: EUROPASS_BLUE })],
+      })
+    );
+    if (l.listening || l.reading || l.writing || l.spokenProduction || l.spokenInteraction) {
+      hasCefr = true;
+      out.push(row([["LISTENING", l.listening], ["READING", l.reading], ["WRITING", l.writing]]));
+      out.push(row([["SPOKEN PRODUCTION", l.spokenProduction], ["SPOKEN INTERACTION", l.spokenInteraction]]));
+    } else if (l.level) {
+      out.push(new Paragraph({ spacing: { after: 30 }, children: [val(l.level)] }));
+    }
+  }
+  if (hasCefr) {
+    out.push(
+      new Paragraph({
+        spacing: { before: 60, after: 60 },
+        children: [new TextRun({ text: "Levels: A1 and A2: Basic user; B1 and B2: Independent user; C1 and C2: Proficient user", italics: true, font, size: 16, color: "64748B" })],
+      })
+    );
+  }
+  return out;
 }
 
 export async function resolveImageBuffer(urlOrPath?: string): Promise<Buffer | null> {
@@ -537,6 +583,14 @@ export async function buildEuropassDocxElements(
         ],
       })
     );
+
+    if (/language/i.test(section.title || "") && !/certificate|ielts|english/i.test(section.title || "")) {
+      const langParas = buildLanguageParagraphs(content, font);
+      if (langParas) {
+        out.push(...langParas);
+        continue;
+      }
+    }
 
     // Entries are separated by blank lines; the first line of each entry is its title.
     for (const entry of content.split(/\n\s*\n/)) {

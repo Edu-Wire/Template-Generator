@@ -338,6 +338,42 @@ export function InternshipInlineForm({
 
 // ── 3. Language Skills ─────────────────────────────────────────────────────
 
+export const CEFR_OPTIONS = [
+  { value: "A1", label: "A1 - Basic User" },
+  { value: "A2", label: "A2 - Basic User" },
+  { value: "B1", label: "B1 - Independent user" },
+  { value: "B2", label: "B2 - Independent user" },
+  { value: "C1", label: "C1 - Proficient user" },
+  { value: "C2", label: "C2 - Proficient user" },
+];
+
+function CefrSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const code = (value || "").trim().slice(0, 2).toUpperCase();
+  return (
+    <div>
+      <label className={styles.inlineFormLabel}>{label}</label>
+      <select
+        className={styles.inlineFormInput}
+        value={CEFR_OPTIONS.some((o) => o.value === code) ? code : ""}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Select level</option>
+        {CEFR_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 interface LanguageInlineFormProps {
   initialData?: Partial<LanguageEntry>;
   onSave: (data: Omit<LanguageEntry, "id">) => void;
@@ -439,61 +475,20 @@ export function LanguageInlineForm({
       </div>
 
       {showCefrDetails && (
-        <div className={styles.inlineFormGrid} style={{ marginTop: "8px" }}>
-          <div>
-            <label className={styles.inlineFormLabel}>Listening (CEFR)</label>
-            <input
-              type="text"
-              className={styles.inlineFormInput}
-              value={listening}
-              onChange={(e) => setListening(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. B2 or C1"
-            />
+        <div style={{ marginTop: "8px" }}>
+          <div className={styles.inlineFormLabel} style={{ fontWeight: 700 }}>Understanding</div>
+          <div className={styles.inlineFormGrid}>
+            <CefrSelect label="Listening" value={listening} onChange={setListening} />
+            <CefrSelect label="Reading" value={reading} onChange={setReading} />
           </div>
-          <div>
-            <label className={styles.inlineFormLabel}>Reading (CEFR)</label>
-            <input
-              type="text"
-              className={styles.inlineFormInput}
-              value={reading}
-              onChange={(e) => setReading(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. B2 or C1"
-            />
+          <div className={styles.inlineFormLabel} style={{ fontWeight: 700, marginTop: "8px" }}>Speaking</div>
+          <div className={styles.inlineFormGrid}>
+            <CefrSelect label="Spoken interaction" value={spokenInteraction} onChange={setSpokenInteraction} />
+            <CefrSelect label="Spoken production" value={spokenProduction} onChange={setSpokenProduction} />
           </div>
-          <div>
-            <label className={styles.inlineFormLabel}>Writing (CEFR)</label>
-            <input
-              type="text"
-              className={styles.inlineFormInput}
-              value={writing}
-              onChange={(e) => setWriting(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. B2 or C1"
-            />
-          </div>
-          <div>
-            <label className={styles.inlineFormLabel}>Spoken Interaction</label>
-            <input
-              type="text"
-              className={styles.inlineFormInput}
-              value={spokenInteraction}
-              onChange={(e) => setSpokenInteraction(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. B2 or C1"
-            />
-          </div>
-          <div className={styles.inlineFormFieldFull}>
-            <label className={styles.inlineFormLabel}>Spoken Production</label>
-            <input
-              type="text"
-              className={styles.inlineFormInput}
-              value={spokenProduction}
-              onChange={(e) => setSpokenProduction(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. B2 or C1"
-            />
+          <div className={styles.inlineFormLabel} style={{ fontWeight: 700, marginTop: "8px" }}>Writing</div>
+          <div className={styles.inlineFormGrid}>
+            <CefrSelect label="Writing" value={writing} onChange={setWriting} />
           </div>
         </div>
       )}

@@ -1501,3 +1501,63 @@
   position: relative;
   top: var(--pdf-icon-shift);
 }
+/* --- Europass language table / mother tongue card ---------------------- */
+.motherTongueCard {
+  display: inline-block;
+  min-width: 40mm;
+  margin-top: 1mm;
+  padding: 1.5mm 3mm;
+  border: 1px solid #0c56a5;
+  border-radius: 2px;
+}
+.motherTongueName { font-weight: 700; }
+.motherTongueSub { font-size: 9pt; color: #334155; }
+.cefrTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5mm;
+  font-size: 9.5pt;
+}
+.cefrTable th {
+  background: #eeeeee;
+  text-align: left;
+  font-weight: 700;
+  padding: 1.5mm 2mm;
+}
+.cefrTable td {
+  padding: 1.5mm 2mm;
+  border-bottom: 1px solid #d4d4d4;
+  vertical-align: top;
+}
+.cefrTableLang { font-weight: 400; }
+.cefrGuidanceToggle {
+  display: block;
+  margin-top: 2mm;
+  font-size: 9pt;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.languageSubLabel {
+  display: block;
+  font-weight: 700;
+  color: #444444;
+  line-height: 1.5;
+  margin: 0 0 2mm 0;
+  padding-top: 0.5mm;
+}
+.motherTongueCard { margin-top: 0; line-height: 1.4; }
+.cefrTable td, .cefrTable th { line-height: 1.4; }
+.cefrTable td strong, .cefrSkillBadge { color: #0c56a5; font-weight: 700; }
+
+/* --- Europass grouped language table (matches official layout) --------- */
+.motherTongueName { font-weight: 700; }
+.otherLangLabel { font-size: 9.97pt; color: #444444; margin-bottom: 2mm; }
+.cefrTable { margin-top: 1mm; font-size: 9pt; border-top: 1px solid #d4d4d4; }
+.cefrTable th, .cefrTable td { background: none; text-align: center; padding: 1.5mm 2mm; border-bottom: none; color: #1e293b; }
+.cefrGroupRow th { font-weight: 700; letter-spacing: 0.2px; padding-top: 2.5mm; }
+.cefrSubRow th { font-weight: 400; border-bottom: 1px solid #d4d4d4; }
+.cefrTable tbody tr { background: #eeeeee; }
+.cefrTable td.cefrTableLang { text-align: left; font-weight: 700; }
+.cefrCell { font-weight: 400; }
+.cefrLegend { font-size: 8pt; margin-top: 1.5mm; }
