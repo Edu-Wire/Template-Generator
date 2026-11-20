@@ -37,6 +37,7 @@ import { ResumeImportModal } from "./ResumeImportModal";
 import { StudentSelectModal } from "@/features/sop-generator/components/StudentSelectModal";
 import { PreviewScaler } from "../preview/PreviewScaler";
 import { EuropassTemplate } from "@/templates/europass/EuropassTemplate";
+import { syncFinalizedPdf } from "@/lib/export/syncFinalizedPdf";
 
 /**
  * Inner shell — rendered inside DocumentProvider so it can read and update context.
@@ -516,21 +517,9 @@ function GeneratorLayout() {
     if (result?.success && result?.pdfBase64 && typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
       const docId = urlParams.get("docId") || urlParams.get("documentId");
-      if (docId) {
-        try {
-          await fetch(`/api/documents/${docId}/pdf`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              pdfBase64: result.pdfBase64,
-              fileName: result.filename,
-              status: "FINALIZED",
-            }),
-          });
-        } catch (err) {
-          console.warn("[Resume PDF Server Sync Failed]:", err);
-        }
-      }
+      const outcome = await syncFinalizedPdf(docId, result.pdfBase64, result.filename);
+      setSavedNoticeText(outcome.status === "finalized" ? outcome.message : `⚠ ${outcome.message}`);
+      setTimeout(() => setSavedNoticeText(null), outcome.status === "finalized" ? 4000 : 8000);
     }
   }
 

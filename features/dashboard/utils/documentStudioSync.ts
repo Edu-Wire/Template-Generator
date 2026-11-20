@@ -383,16 +383,11 @@ export function syncSectionsToCvData(
             const existing = (baseCv.languages || []).find(
               (l) => l.language?.toLowerCase() === parsedLang.language?.toLowerCase()
             );
-            const hasCefr = Boolean(
-              parsedLang.listening || parsedLang.reading || parsedLang.writing ||
-              parsedLang.spokenProduction || parsedLang.spokenInteraction
-            );
+            // The section text is the source of truth: a language written without
+            // levels (e.g. just "English") must not inherit stale CEFR data.
             return {
               id: existing?.id ?? `lang-${idx}`,
-              // Keep previously stored CEFR data unless the text now carries its own.
-              ...(hasCefr ? {} : existing ?? {}),
               ...parsedLang,
-              level: parsedLang.level ?? existing?.level ?? (hasCefr ? undefined : "Proficient"),
             };
           });
         } else {

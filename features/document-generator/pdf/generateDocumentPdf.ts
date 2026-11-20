@@ -360,6 +360,13 @@ export async function generateDocumentPdf(
                 .querySelectorAll('[data-pdf-page="true"]')
                 .forEach((el) => el.setAttribute("data-pdf-export", "true"));
 
+              // 1a. Reveal print-only layouts that are hidden while editing
+              clonedDoc
+                .querySelectorAll<HTMLElement>('[data-pdf-only="true"]')
+                .forEach((el) => {
+                  el.style.display = "block";
+                });
+
               // 1. Explicitly remove any screen-only elements marked for exclusion
               clonedDoc
                 .querySelectorAll(

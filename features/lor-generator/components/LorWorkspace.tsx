@@ -14,6 +14,7 @@ import { exportLorPdf, printLorDocument } from "../pdf/exportLorPdf";
 import { StudentDropdown } from "@/components/common/StudentDropdown";
 import { useGlobalStudent } from "@/lib/context/GlobalStudentContext";
 import { mapCrmToNormalizedStudent } from "@/services/normalization";
+import { syncFinalizedPdf } from "@/lib/export/syncFinalizedPdf";
 
 function WorkspaceInner() {
   const {
@@ -57,21 +58,8 @@ function WorkspaceInner() {
           if (match) targetDocId = match[1];
         }
 
-        if (targetDocId) {
-          try {
-            await fetch(`/api/documents/${targetDocId}/pdf`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                pdfBase64: result.pdfBase64,
-                fileName: result.filename,
-                status: "FINALIZED",
-              }),
-            });
-          } catch (syncErr) {
-            console.warn("[LorWorkspace] Failed to persist finalized PDF to server:", syncErr);
-          }
-        }
+        const outcome = await syncFinalizedPdf(targetDocId, result.pdfBase64, result.filename);
+        if (outcome.status !== "finalized") setExportError(outcome.message);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to generate PDF";
