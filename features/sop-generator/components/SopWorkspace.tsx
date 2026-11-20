@@ -40,6 +40,7 @@ import { TransitionJustificationModal } from "./TransitionJustificationModal";
 import type { NormalizedQualification } from "@/types/normalizedStudent";
 import { CanvaFloatingToolbar } from "@/components/common/CanvaFloatingToolbar";
 import { AdmissionsAiAssistant } from "@/components/common/AdmissionsAiAssistant";
+import { syncFinalizedPdf } from "@/lib/export/syncFinalizedPdf";
 
 /**
  * Parses markdown bold (**text**) into <strong> elements for rich embassy-grade rendering.
@@ -1329,24 +1330,13 @@ export function SopWorkspace({ initialDraft }: SopWorkspaceProps = {}) {
         }
       }
 
-      if (targetDocId) {
-        try {
-          const res = await fetch(`/api/documents/${targetDocId}/pdf`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              pdfBase64: result.pdfBase64,
-              fileName: result.filename,
-              status: "FINALIZED",
-            }),
-          });
-          if (res.ok) {
-            setSavedNoticeText(`PDF finalized on server (${totalWordCount} words)`);
-            setTimeout(() => setSavedNoticeText(null), 4000);
-          }
-        } catch (err) {
-          console.warn("[SOP PDF Server Sync Failed]:", err);
-        }
+      const outcome = await syncFinalizedPdf(targetDocId, result.pdfBase64, result.filename);
+      if (outcome.status === "finalized") {
+        setSavedNoticeText(`✓ PDF finalized — you can now Save To CRM (${totalWordCount} words)`);
+        setTimeout(() => setSavedNoticeText(null), 4000);
+      } else {
+        setSavedNoticeText(`⚠ ${outcome.message}`);
+        setTimeout(() => setSavedNoticeText(null), 8000);
       }
     }
   }

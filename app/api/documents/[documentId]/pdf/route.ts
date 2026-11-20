@@ -20,8 +20,6 @@ import {
   findById,
   getPdf,
   savePdf,
-  saveDocument,
-  generateDocumentId,
   PdfSizeLimitError,
 } from "@/services/webhook/documentStore";
 import type { WebhookErrorResponse } from "@/services/webhook/types";
@@ -89,7 +87,7 @@ export async function GET(
         success: false,
         code: "DOCUMENT_NOT_FINALIZED",
         message:
-          "Document isn't finalized yet. The counsellor has not generated the final PDF.",
+          "Document isn't finalized yet. Open the editor and click Generate PDF first.",
         details: {
           documentId: trimmedId,
           status: doc.status,
@@ -186,32 +184,17 @@ export async function POST(
     );
   }
 
-  // If document does not exist yet (e.g. cold start across serverless containers), create a placeholder record
-  let doc = await findById(trimmedId);
+  // The document must already exist (created by /api/documents/generate). Never fabricate a record.
+  const doc = await findById(trimmedId);
   if (!doc) {
-    const now = new Date().toISOString();
-    doc = await saveDocument({
-      id: trimmedId,
-      studentId: "unknown",
-      studentName: body.fileName ? body.fileName.replace(/\.pdf$/i, "") : "Student",
-      documentType: "SOP",
-      templateId: "default",
-      status: "FINALIZED",
-      reviewUrl: `/sop-generator/${trimmedId}`,
-      createdAt: now,
-      updatedAt: now,
-      sectionContents: {},
-      sectionStatuses: {},
-      validationIssues: [],
-      normalizedProfile: {
-        meta: { studentId: "unknown", source: "static-mock", fetchedAt: now },
-        personal: { fullName: "Student", firstName: "Student", lastName: "Student" },
-        academics: { qualifications: [] },
-        workExperience: [],
-        tests: {},
-        applications: { all: [] },
+    return NextResponse.json<WebhookErrorResponse>(
+      {
+        success: false,
+        code: "DOCUMENT_NOT_FOUND",
+        message: `Document with ID "${trimmedId}" was not found. Re-open the editor from the CRM link.`,
       },
-    });
+      { status: 404, headers: CORS_HEADERS }
+    );
   }
 
   let updated;
