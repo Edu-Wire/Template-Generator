@@ -23,6 +23,7 @@ import type { Editor } from "@tiptap/react";
 import { TiptapEditor, type FormattingState } from "./TiptapEditor";
 import { DocumentThumbnailPreview } from "./DocumentThumbnailPreview";
 import { EuropassTemplate, EUROPASS_DEFAULT_SECTION_ORDER } from "@/templates/europass/EuropassTemplate";
+import { LanguageSectionEditorForm } from "@/templates/europass/sections/LanguageSectionEditorForm";
 import {
   SECTION_EDITOR_OPEN_EVENT,
   SectionEditorForm,
@@ -8024,8 +8025,9 @@ export function DocumentStudioDashboard() {
                 const label = CV_SECTION_PROMPTS_BY_ID[sectionId] ?? sectionId;
                 const title = existingSec?.heading || label;
                 const initialContent = mode === "edit" ? existingSec?.content || "" : "";
+                const EditorForm = sectionId === "languages" ? LanguageSectionEditorForm : SectionEditorForm;
                 return (
-                  <SectionEditorForm
+                  <EditorForm
                     key={`${sectionId}-${mode}`}
                     heading={`${mode === "edit" ? "Edit" : "Add to"} ${label}`}
                     mode={mode}

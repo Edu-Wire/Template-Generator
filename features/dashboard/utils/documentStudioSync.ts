@@ -1,3 +1,5 @@
+import { parseOtherLanguages, formatOtherLanguage } from "./languageSectionContent";
+
 export function sanitizeAddressValue(raw: string): string {
   if (!raw) return "";
   let clean = raw.trim();
@@ -363,7 +365,7 @@ export function syncSectionsToCvData(
   if (langSec && langSec.content.trim()) {
     const raw = langSec.content;
     const mtMatch =
-      raw.match(/mother\s*tou?ngue(?:\(s\))?\s*[-:]\s*([^\n,]+)/i) ||
+      raw.match(/mother\s*tou?ngue(?:\(s\))?\s*[-:]\s*([^\n]+)/i) ||
       raw.match(/(?:native\s*language|mother\s*language)[-:]\s*([^\n,]+)/i);
     if (mtMatch && mtMatch[1]) {
       updatedCv.motherTongue = mtMatch[1].trim();
@@ -375,14 +377,22 @@ export function syncSectionsToCvData(
       if (/^(?:none|nil|n\/a|remove|no\s+other|empty)$/i.test(cleanOther) || cleanOther.toLowerCase().includes("remove the other")) {
         updatedCv.languages = [];
       } else {
-        const otherLangs = cleanOther.split(/[,/•\n]+/).map((l) => l.trim()).filter(Boolean);
+        const otherLangs = parseOtherLanguages(cleanOther);
         if (otherLangs.length > 0) {
-          updatedCv.languages = otherLangs.map((lang, idx) => {
-            const existing = (baseCv.languages || []).find((l) => l.language?.toLowerCase() === lang.toLowerCase());
-            return existing || {
-              id: `lang-${idx}`,
-              language: lang,
-              level: "Proficient",
+          updatedCv.languages = otherLangs.map((parsedLang, idx) => {
+            const existing = (baseCv.languages || []).find(
+              (l) => l.language?.toLowerCase() === parsedLang.language?.toLowerCase()
+            );
+            const hasCefr = Boolean(
+              parsedLang.listening || parsedLang.reading || parsedLang.writing ||
+              parsedLang.spokenProduction || parsedLang.spokenInteraction
+            );
+            return {
+              id: existing?.id ?? `lang-${idx}`,
+              // Keep previously stored CEFR data unless the text now carries its own.
+              ...(hasCefr ? {} : existing ?? {}),
+              ...parsedLang,
+              level: parsedLang.level ?? existing?.level ?? (hasCefr ? undefined : "Proficient"),
             };
           });
         } else {
@@ -728,8 +738,8 @@ export function syncCvDataToSections(
   if ((cv.motherTongue !== undefined || cv.languages !== undefined) && langIdx >= 0) {
     const parts: string[] = [];
     if (cv.motherTongue?.trim()) parts.push(`Mother tongue(s): ${cv.motherTongue.trim()}`);
-    const other = (cv.languages || []).map((l) => l.language?.trim()).filter(Boolean);
-    if (other.length > 0) parts.push(`Other language(s): ${other.join(", ")}`);
+    const other = (cv.languages || []).filter((l) => l.language?.trim()).map(formatOtherLanguage);
+    if (other.length > 0) parts.push(`Other language(s): ${other.join("; ")}`);
     sections[langIdx].content = parts.join("\n");
   }
 
