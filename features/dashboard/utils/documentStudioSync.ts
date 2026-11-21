@@ -899,8 +899,14 @@ export function normalizeInternshipPaste(raw: string): string {
   // Bullet-only blocks belong to the entry above them
   const merged: string[] = [];
   for (const chunk of separated.join("\n").split(/\n\s*\n+/).map((c) => c.trim()).filter(Boolean)) {
+    const isLoneSentence =
+      !chunk.includes("\n") && !chunk.includes("|") && !chunk.includes("[") && !/^\d+\./.test(chunk);
     if (/^•/.test(chunk) && merged.length > 0) merged[merged.length - 1] += "\n" + chunk;
-    else merged.push(chunk);
+    else if (isLoneSentence && merged.length > 0 && merged[merged.length - 1].includes("\n")) {
+      // A single blank-line-separated sentence can't be an entry (needs role + company):
+      // it is a paragraph of the entry above, so keep it as a bullet.
+      merged[merged.length - 1] += "\n• " + chunk;
+    } else merged.push(chunk);
   }
   const isDateLine = (l: string) =>
     l.length < 70 && !l.includes("|") && !/^•/.test(l) && /(?:19|20)\d{2}|present|ongoing|current/i.test(l);
