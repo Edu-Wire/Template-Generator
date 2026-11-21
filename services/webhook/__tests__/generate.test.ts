@@ -339,6 +339,30 @@ describe("Unified Document Generation Webhook", () => {
     assert.strictEqual(uploadBody.fileName, "SampleStudent_SOP_Final.pdf");
   });
 
+  test("Scenario 13b: jsPDF-style data URI (with ;filename=...) is stored and served as the real PDF bytes", async () => {
+    const genRes = await POST(makeRequest({ studentId: KNOWN_CACHED_STUDENT_ID, documentType: "SOP" }));
+    const docId = (await genRes.json()).documentId;
+
+    const original = Buffer.from("%PDF-1.4 real pdf bytes " + "x".repeat(500));
+    // Exactly what jsPDF's output("datauristring") produces
+    const jsPdfDataUri = `data:application/pdf;filename=generated.pdf;base64,${original.toString("base64")}`;
+    const uploadReq = new NextRequest(`http://localhost:3000/api/documents/${docId}/pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pdfBase64: jsPdfDataUri, fileName: "x.pdf" }),
+    });
+    const uploadRes = await POST_PDF(uploadReq, { params: Promise.resolve({ documentId: docId }) });
+    assert.strictEqual(uploadRes.status, 200);
+
+    const getRes = await GET_PDF(
+      new NextRequest(`http://localhost:3000/api/documents/${docId}/pdf`, { headers: { "X-API-Key": TEST_API_KEY } }),
+      { params: Promise.resolve({ documentId: docId }) }
+    );
+    const served = Buffer.from(await getRes.arrayBuffer());
+    assert.strictEqual(served.length, original.length, "served PDF must be the full original, not a truncated header decode");
+    assert.ok(served.equals(original));
+  });
+
   test("Scenario 14: GET /api/documents/[documentId]/pdf streams raw PDF binary once finalized", async () => {
     // 1. Create and finalize document
     const genReq = makeRequest({
