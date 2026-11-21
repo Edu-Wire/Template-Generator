@@ -20,6 +20,16 @@ import { DocumentModel } from "@/models/Document";
 /** Maximum allowed PDF binary size: 10 MB (safe below 16MB BSON limit) */
 export const MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024;
 
+/**
+ * Removes a leading data-URI header of any shape. jsPDF's output("datauristring") produces
+ * "data:application/pdf;filename=generated.pdf;base64,<data>", which a fixed
+ * "data:application/pdf;base64," match misses, leaving the header in the string so it decodes
+ * to ~20 bytes of junk instead of the PDF. Also repairs records stored that way before this fix.
+ */
+export function stripDataUriPrefix(value: string): string {
+  return value.replace(/^data:[^,]*,/, "");
+}
+
 export class PdfSizeLimitError extends Error {
   constructor(message: string = "PDF file exceeds the maximum allowed size limit of 10MB.") {
     super(message);
@@ -208,7 +218,7 @@ export async function savePdf(
   if (!documentId || !pdfBase64) return null;
   const trimmedId = documentId.trim();
 
-  const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+  const cleanBase64 = stripDataUriPrefix(pdfBase64);
 
   // Enforce binary size limit: Base64 length * (3/4) = approximate byte size
   const estimatedBytes = Math.ceil((cleanBase64.length * 3) / 4);
@@ -276,7 +286,7 @@ export async function getPdf(
     const doc = memoryStore.get(trimmedId);
     if (!doc || !doc.pdfBase64) return null;
 
-    const cleanBase64 = doc.pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+    const cleanBase64 = stripDataUriPrefix(doc.pdfBase64);
     const buffer = Buffer.from(cleanBase64, "base64");
     const fileName = doc.pdfFileName || `${doc.studentName || "Document"}_Final.pdf`;
 
@@ -295,7 +305,7 @@ export async function getPdf(
 
   if (!doc || !doc.pdfBase64) return null;
 
-  const cleanBase64 = doc.pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+  const cleanBase64 = stripDataUriPrefix(doc.pdfBase64);
   const buffer = Buffer.from(cleanBase64, "base64");
   const fileName = doc.pdfFileName || `${doc.studentName || "Document"}_Final.pdf`;
 
