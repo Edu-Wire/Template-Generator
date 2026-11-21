@@ -20,6 +20,7 @@ import {
 } from "../utils/documentHydrator";
 import type { CrmSnapshot } from "@/types/crmSnapshot";
 import type { Editor } from "@tiptap/react";
+import { syncFinalizedPdf } from "@/lib/export/syncFinalizedPdf";
 import { TiptapEditor, type FormattingState } from "./TiptapEditor";
 import { DocumentThumbnailPreview } from "./DocumentThumbnailPreview";
 import { EuropassTemplate, EUROPASS_DEFAULT_SECTION_ORDER } from "@/templates/europass/EuropassTemplate";
@@ -991,6 +992,10 @@ export function DocumentStudioDashboard() {
   const [aiPromptText, setAiPromptText] = useState("");
   const [isAiCooking, setIsAiCooking] = useState(false);
   const [aiToast, setAiToast] = useState<{ message: string; type: "success" | "info" | "error" } | null>(null);
+  // CRM link: set when the studio is opened from the CRM (?docId=...). Exporting that
+  // document uploads the PDF to /api/documents/{docId}/pdf so "Save to CRM" can fetch it.
+  const crmLinkRef = useRef<{ docId: string; localId: string | null } | null>(null);
+  const crmAutoOpenedRef = useRef<string | null>(null);
   const [fontSize, setFontSize] = useState<number>(11);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isBold, setIsBold] = useState(false);
@@ -1592,8 +1597,12 @@ export function DocumentStudioDashboard() {
         if (url.searchParams.has("studentId") || url.searchParams.has("student")) {
           url.searchParams.delete("studentId");
           url.searchParams.delete("student");
+          url.searchParams.delete("docId");
+          url.searchParams.delete("documentId");
+          url.searchParams.delete("type");
           window.history.pushState({}, "", url.pathname || "/");
         }
+        crmLinkRef.current = null;
       } catch { }
     }
   };
@@ -5282,6 +5291,20 @@ export function DocumentStudioDashboard() {
     }
   };
 
+  // Uploads an exported PDF to the generator's document store when the open document is the
+  // one the CRM launched. Returns a toast describing the outcome, or null if not CRM-linked.
+  const syncExportToCrm = async (
+    pdfBase64: string,
+    fileName: string
+  ): Promise<{ message: string; type: "success" | "error" } | null> => {
+    const link = crmLinkRef.current;
+    if (!link || link.localId !== (editableDocContent?.id || null)) return null;
+    const outcome = await syncFinalizedPdf(link.docId, pdfBase64, fileName);
+    return outcome.status === "finalized"
+      ? { message: `✓ Exported ${fileName} — now click "Save to CRM"`, type: "success" }
+      : { message: `Exported ${fileName}, but ${outcome.message}`, type: "error" };
+  };
+
   const handleExportPdf = async () => {
     if (!editableDocContent) return;
     setIsExportingPdf(true);
@@ -5315,13 +5338,14 @@ export function DocumentStudioDashboard() {
           "@/features/document-generator/pdf/generateDocumentPdf"
         );
 
-        await generateDocumentPdf(activeCv, {
+        const generated = await generateDocumentPdf(activeCv, {
           country: editableDocContent.targetCountry || undefined,
           documentType: "CV",
           customFilename: fileName,
         });
 
-        setAiToast({ message: `📥 Exported ${fileName}`, type: "success" });
+        const crmOutcome = await syncExportToCrm(generated.pdfBase64, generated.filename);
+        setAiToast(crmOutcome ?? { message: `📥 Exported ${fileName}`, type: "success" });
       } else {
         const response = await fetch("/api/export/pdf", {
           method: "POST",
@@ -5350,7 +5374,17 @@ export function DocumentStudioDashboard() {
         link.remove();
         window.URL.revokeObjectURL(downloadUrl);
 
-        setAiToast({ message: `📥 Exported ${fileName}`, type: "success" });
+        let crmOutcome: { message: string; type: "success" | "error" } | null = null;
+        if (crmLinkRef.current && crmLinkRef.current.localId === (editableDocContent.id || null)) {
+          const pdfBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          });
+          crmOutcome = await syncExportToCrm(pdfBase64, fileName);
+        }
+        setAiToast(crmOutcome ?? { message: `📥 Exported ${fileName}`, type: "success" });
       }
     } catch (err) {
       console.error("[handleExportPdf] Export failed:", err);
@@ -5745,6 +5779,57 @@ export function DocumentStudioDashboard() {
       setIsModalOpen(false);
     }, 2800);
   };
+
+  // Opened from the CRM (?docId=...&studentId=...&type=RESUME|SOP|LOR): look up the generator
+  // record, hydrate that student's document of the matching type and open it directly,
+  // skipping the gallery. The docId link is kept so export can finalize it for the CRM.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const docId = params.get("docId") || params.get("documentId");
+    if (!docId || crmAutoOpenedRef.current === docId) return;
+    crmAutoOpenedRef.current = docId;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/documents/${encodeURIComponent(docId)}`, {
+          credentials: "same-origin",
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body?.success || !body.document) {
+          throw new Error(body?.error?.message || "Could not load the CRM document.");
+        }
+        const rec = body.document as { studentId: string; documentType: string };
+        const typeMap: Record<string, "CV" | "SOP" | "LOR"> = { RESUME: "CV", SOP: "SOP", LOR: "LOR" };
+        const docType = typeMap[String(rec.documentType).toUpperCase()];
+        if (!docType) throw new Error(`Unsupported document type "${rec.documentType}".`);
+
+        const snapshot = await loadStudentSnapshot(rec.studentId);
+        if (!snapshot) throw new Error("Could not load the student's CRM data.");
+
+        const doc = hydrateDocumentFromSnapshot(
+          docType,
+          snapshot,
+          rec.studentId,
+          docType === "SOP" ? "university-sop-standard" : undefined
+        );
+        doc.id = generateDocumentId(rec.studentId, docType);
+        doc.updatedAt = "Created just now";
+
+        crmLinkRef.current = { docId, localId: doc.id ?? null };
+        syncDocumentToRecent(doc, "Created just now");
+        handleOpenDocument(doc);
+      } catch (err) {
+        crmAutoOpenedRef.current = null;
+        setAiToast({
+          message: err instanceof Error ? err.message : "Could not open the CRM document.",
+          type: "error",
+        });
+      }
+    })();
+    // Runs once per docId on mount; the handlers it calls are stable enough for this one-shot open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const cookingStages = [
     "Connecting to Digi-Wire CRM...",
