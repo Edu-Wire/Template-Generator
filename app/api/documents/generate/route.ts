@@ -203,12 +203,11 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString();
   const studentName = normalizedProfile.personal.fullName || "Student";
 
-  let reviewUrl = `/sop-generator/${documentId}?studentId=${studentId}`;
-  if (normalizedType === "RESUME") {
-    reviewUrl = `/resume-builder?studentId=${studentId}&docId=${documentId}`;
-  } else if (normalizedType === "LOR") {
-    reviewUrl = `/lor-generator?studentId=${studentId}&docId=${documentId}`;
-  }
+  // All document types open in the unified Template Studio at "/". `docId` links the
+  // editor session to this record so exporting a PDF finalizes it for the CRM's "Save to CRM".
+  const reviewUrl = `/?studentId=${encodeURIComponent(studentId)}&docId=${encodeURIComponent(
+    documentId
+  )}&type=${normalizedType}`;
 
   const record = await saveDocument({
     id: documentId,
