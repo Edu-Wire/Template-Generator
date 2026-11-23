@@ -184,6 +184,9 @@ const FUZZY_MATCH: Partial<Record<ListKey, (a: Entry, b: Entry) => boolean>> = {
   leadershipActivities: (a, b) => similarTitle(a.activity, b.activity),
 };
 
+/** Entry fields that hold a URL; an upload may fill them when the stored entry has none. */
+const LINK_FIELDS = ["website", "link", "credentialLink"] as const;
+
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 const isBlank = (v: unknown) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
 
@@ -276,6 +279,18 @@ export function mergeImportedIntoCv(
     for (const entry of incoming) {
       if (isKnown(entry)) {
         duplicates++;
+        // The CV already has this item, but a link only the upload carries is still worth keeping:
+        // fill empty link fields on the stored entry (never replace one that is set).
+        const match = merged.find(
+          (k) =>
+            (norm(identity(k)) === norm(identity(entry)) && (datesOk ? datesOk(k, entry) : true)) ||
+            (fuzzy ? fuzzy(k, entry) : false)
+        );
+        if (match) {
+          for (const field of LINK_FIELDS) {
+            if (isBlank(match[field]) && !isBlank(entry[field])) match[field] = entry[field];
+          }
+        }
         continue;
       }
       known.push(entry);

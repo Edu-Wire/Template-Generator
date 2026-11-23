@@ -35,6 +35,25 @@ export interface PdfParseResult {
   text: string;
   numPages: number;
   embeddedData?: DocumentData | null;
+  /** URLs of clickable link annotations (the visible text may not show the URL). */
+  links?: string[];
+}
+
+async function collectLinkAnnotations(pdf: Awaited<ReturnType<typeof getDocumentProxy>>): Promise<string[]> {
+  const links: string[] = [];
+  try {
+    for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+      const page = await pdf.getPage(i);
+      const annotations = (await page.getAnnotations()) as Array<{ subtype?: string; url?: string; unsafeUrl?: string }>;
+      for (const a of annotations) {
+        const url = a.url || a.unsafeUrl;
+        if (a.subtype === "Link" && url && /^https?:\/\//i.test(url) && !links.includes(url)) links.push(url);
+      }
+    }
+  } catch {
+    // Links are a best-effort extra — never fail the import over them.
+  }
+  return links;
 }
 
 export async function parsePdfBuffer(
@@ -45,9 +64,10 @@ export async function parsePdfBuffer(
     try {
       const uint8 = new Uint8Array(buffer);
       const pdf = await getDocumentProxy(uint8);
-      const [meta, textResult] = await Promise.all([
+      const [meta, textResult, links] = await Promise.all([
         pdf.getMetadata().catch(() => null),
         extractText(pdf, { mergePages: true }),
+        collectLinkAnnotations(pdf),
       ]);
 
       const subject = (meta?.info as Record<string, unknown> | undefined)?.Subject as string | undefined;
@@ -57,6 +77,7 @@ export async function parsePdfBuffer(
         text: textResult?.text || "",
         numPages: textResult?.totalPages || 1,
         embeddedData: embeddedPayload?.data || null,
+        links,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
