@@ -68,7 +68,7 @@ Return a single JSON object with this exact shape:
       "fieldOfStudy": "...",
       "startDate": "...",
       "endDate": "...",
-      "address": "city/country if present",
+      "address": "the FULL institution address exactly as written after 'Address:' (street, area, city, state, pin code) — never shorten it to city/country",
       "website": "institution website URL exactly as written (e.g. after 'Website:'), if present",
       "finalGrade": "CGPA or percentage or grade verbatim if present",
       "description": "verbatim subjects, description, or additional info if present"

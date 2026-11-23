@@ -30,6 +30,18 @@ describe("recoverLinks", () => {
     assert.equal(out.education?.[2].website, "https://www.orchidsinternationalschool.com/bhopal-branches/hoshangabad-road");
   });
 
+  it("restores the full printed address when the AI shortened it", () => {
+    const data = baseData();
+    data.education![0].address = "India";
+    data.education![1].address = "Bhopal, India";
+    data.education![2].address = "Bhopal, India";
+    const raw = RAW.replace("DRM OFFICE, Bhopal", "DRM OFFICE, Hoshangabad Road, Bhopal, Madhya Pradesh 462024")
+      .replace("National Highway, 12, Bhopal |", "National Highway, 12, Narmadapuram Rd, Ratanpur Sadak, Bhopal, Madhya Pradesh 462047 |");
+    const out = recoverLinks(data, raw);
+    assert.equal(out.education?.[0].address, "DRM OFFICE, Hoshangabad Road, Bhopal, Madhya Pradesh 462024");
+    assert.equal(out.education?.[1].address, "National Highway, 12, Narmadapuram Rd, Ratanpur Sadak, Bhopal, Madhya Pradesh 462047");
+  });
+
   it("never overwrites a website the AI already returned", () => {
     const data = baseData();
     data.education![0].website = "https://mine.example";
@@ -77,5 +89,14 @@ describe("recoverLinks", () => {
 
   it("extractUrls trims trailing punctuation and de-duplicates", () => {
     assert.deepEqual(extractUrls("see https://a.com/x, and https://a.com/x."), ["https://a.com/x"]);
+  });
+});
+
+describe("recoverLinks portfolio", () => {
+  it("drops a portfolio that is really a school's website and never guesses one from school links", () => {
+    const data = baseData();
+    data.personal = { fullName: "Vidit", portfolioUrl: "https://www.orchidsinternationalschool" };
+    const out = recoverLinks(data, RAW, ["https://bsssbhopal.edu.in/", "https://www.orchidsinternationalschool.com/bhopal-branches/hoshangabad-road"]);
+    assert.ok(!out.personal?.portfolioUrl);
   });
 });

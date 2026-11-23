@@ -14,7 +14,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import type { DocumentData, EducationEntry, InternshipEntry } from "@/types";
+import type { DocumentData } from "@/types";
 import type {
   ResumeImportResult,
   CrmConflictItem,
@@ -24,6 +24,15 @@ import type {
 import { mergeImportedIntoCv } from "../utils/mergeImportedCv";
 import { generateId } from "@/lib/generateId";
 import { PhotoCropModal } from "../photo/PhotoCropModal";
+import {
+  EntryListEditor,
+  FieldGrid,
+  PERSONAL_EXTRA_FIELDS,
+  ENGLISH_FIELDS,
+  LIST_SECTION_DEFS,
+  listSectionCount,
+  hasEnglishCertificate,
+} from "./ResumeImportSectionEditors";
 
 interface ResumeImportReviewProps {
   importResult: ResumeImportResult;
@@ -209,46 +218,30 @@ export function ResumeImportReview({
     }
   }
 
-  // Adding missing details directly
-  function handleAddEducation() {
-    setData((prev) => ({
-      ...prev,
-      education: [
-        ...(prev.education || []),
-        { id: generateId(), qualification: "", institution: "" },
-      ],
-    }));
-    setEditingSection("education");
-  }
-
-  function handleAddInternship() {
-    setData((prev) => ({
-      ...prev,
-      internships: [
-        ...(prev.internships || []),
-        { id: generateId(), role: "", company: "" },
-      ],
-    }));
-    setEditingSection("internships");
-  }
-
-  function handleAddCertification() {
-    setData((prev) => ({
-      ...prev,
-      certifications: [
-        ...(prev.certifications || []),
-        { id: generateId(), name: "", provider: "" },
-      ],
-    }));
-    setEditingSection("certifications");
-  }
-
   function handleAddSkill() {
     setData((prev) => ({
       ...prev,
       skills: [...(prev.skills || []), { id: generateId(), name: "" }],
     }));
     setEditingSection("skills");
+  }
+
+  function renderSidebarButton(id: string, show: boolean, label: string) {
+    if (!show) return null;
+    return (
+      <button
+        key={id}
+        type="button"
+        onClick={() => setEditingSection(id)}
+        className={`w-full text-left px-3 py-2 rounded-lg font-medium cursor-pointer ${
+          editingSection === id
+            ? "bg-white shadow-2xs text-slate-900 border border-slate-200"
+            : "text-slate-600 hover:bg-slate-100"
+        }`}
+      >
+        {label}
+      </button>
+    );
   }
 
   return (
@@ -616,28 +609,12 @@ export function ResumeImportReview({
               >
                 Personal Details
               </button>
-              <button
-                type="button"
-                onClick={() => setEditingSection("education")}
-                className={`w-full text-left px-3 py-2 rounded-lg font-medium cursor-pointer ${
-                  editingSection === "education"
-                    ? "bg-white shadow-2xs text-slate-900 border border-slate-200"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                Education ({(data.education || []).length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditingSection("internships")}
-                className={`w-full text-left px-3 py-2 rounded-lg font-medium cursor-pointer ${
-                  editingSection === "internships"
-                    ? "bg-white shadow-2xs text-slate-900 border border-slate-200"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                Internships ({(data.internships || []).length})
-              </button>
+              {renderSidebarButton("aboutMe", Boolean(data.aboutMe?.trim()), "About Me")}
+              {LIST_SECTION_DEFS.filter((d) => d.alwaysShow || listSectionCount(data, d.key) > 0).map((d) => (
+                renderSidebarButton(d.key, true, `${d.label} (${listSectionCount(data, d.key)})`)
+              ))}
+              {renderSidebarButton("english", hasEnglishCertificate(data), "English Certificate")}
+              {renderSidebarButton("otherDetails", Boolean(data.declaration?.trim() || data.motherTongue?.trim()), "Declaration & Mother Tongue")}
               <button
                 type="button"
                 onClick={() => setEditingSection("skills")}
@@ -822,118 +799,71 @@ export function ResumeImportReview({
                       />
                     </div>
                   </div>
+                  <FieldGrid
+                    fields={PERSONAL_EXTRA_FIELDS}
+                    value={data.personal as Record<string, unknown> | undefined}
+                    onChange={(next) => setData((p) => ({ ...p, personal: next as DocumentData["personal"] }))}
+                  />
                 </div>
               )}
 
-              {editingSection === "education" && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-slate-900">Education Entries</h4>
-                    <button
-                      type="button"
-                      onClick={handleAddEducation}
-                      className="text-[#096491] hover:underline cursor-pointer"
-                    >
-                      + Add Entry
-                    </button>
-                  </div>
-                  {(data.education || []).map((edu, idx) => (
-                    <div key={edu.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-700">Entry #{idx + 1}</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setData((p) => ({
-                              ...p,
-                              education: (p.education || []).filter((e) => e.id !== edu.id),
-                            }))
-                          }
-                          className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                        >
-                          ✕ Remove
-                        </button>
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Degree / Qualification"
-                        value={edu.qualification || ""}
-                        onChange={(e) => {
-                          const updated = [...(data.education || [])];
-                          updated[idx] = { ...updated[idx], qualification: e.target.value };
-                          setData((p) => ({ ...p, education: updated }));
-                        }}
-                        className="w-full border border-slate-300 rounded px-2 py-1 bg-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Institution / School"
-                        value={edu.institution || ""}
-                        onChange={(e) => {
-                          const updated = [...(data.education || [])];
-                          updated[idx] = { ...updated[idx], institution: e.target.value };
-                          setData((p) => ({ ...p, education: updated }));
-                        }}
-                        className="w-full border border-slate-300 rounded px-2 py-1 bg-white"
-                      />
-                    </div>
-                  ))}
+              {editingSection === "aboutMe" && (
+                <div className="space-y-2">
+                  <h4 className="font-bold text-slate-900">About Me</h4>
+                  <textarea
+                    rows={10}
+                    value={data.aboutMe || ""}
+                    onChange={(e) => setData((p) => ({ ...p, aboutMe: e.target.value }))}
+                    className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 focus:border-[#096491] resize-y"
+                  />
                 </div>
               )}
 
-              {editingSection === "internships" && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-slate-900">Work Experience & Internships</h4>
-                    <button
-                      type="button"
-                      onClick={handleAddInternship}
-                      className="text-[#096491] hover:underline cursor-pointer"
-                    >
-                      + Add Entry
-                    </button>
-                  </div>
-                  {(data.internships || []).map((intern, idx) => (
-                    <div key={intern.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-slate-700">Experience #{idx + 1}</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setData((p) => ({
-                              ...p,
-                              internships: (p.internships || []).filter((i) => i.id !== intern.id),
-                            }))
-                          }
-                          className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                        >
-                          ✕ Remove
-                        </button>
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Job Title / Role"
-                        value={intern.role || ""}
-                        onChange={(e) => {
-                          const updated = [...(data.internships || [])];
-                          updated[idx] = { ...updated[idx], role: e.target.value };
-                          setData((p) => ({ ...p, internships: updated }));
-                        }}
-                        className="w-full border border-slate-300 rounded px-2 py-1 bg-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Company / Employer"
-                        value={intern.company || ""}
-                        onChange={(e) => {
-                          const updated = [...(data.internships || [])];
-                          updated[idx] = { ...updated[idx], company: e.target.value };
-                          setData((p) => ({ ...p, internships: updated }));
-                        }}
-                        className="w-full border border-slate-300 rounded px-2 py-1 bg-white"
-                      />
-                    </div>
-                  ))}
+              {LIST_SECTION_DEFS.map((d) =>
+                editingSection === d.key ? (
+                  <EntryListEditor
+                    key={d.key}
+                    title={d.label}
+                    itemLabel={d.itemLabel}
+                    fields={d.fields}
+                    items={(data[d.key] as unknown as Array<{ id: string } & Record<string, unknown>>) ?? []}
+                    onChange={(next) => setData((p) => ({ ...p, [d.key]: next }))}
+                  />
+                ) : null
+              )}
+
+              {editingSection === "english" && (
+                <div className="space-y-2">
+                  <h4 className="font-bold text-slate-900">English Certificate</h4>
+                  <FieldGrid
+                    fields={ENGLISH_FIELDS}
+                    value={data.englishCertificate as Record<string, unknown> | undefined}
+                    onChange={(next) => setData((p) => ({ ...p, englishCertificate: next as DocumentData["englishCertificate"] }))}
+                  />
+                </div>
+              )}
+
+              {editingSection === "otherDetails" && (
+                <div className="space-y-2">
+                  <h4 className="font-bold text-slate-900">Declaration & Mother Tongue</h4>
+                  <label className="block">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 block mb-0.5">Mother tongue</span>
+                    <input
+                      type="text"
+                      value={data.motherTongue || ""}
+                      onChange={(e) => setData((p) => ({ ...p, motherTongue: e.target.value }))}
+                      className="w-full border border-slate-300 rounded px-2 py-1 bg-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 block mb-0.5">Declaration</span>
+                    <textarea
+                      rows={4}
+                      value={data.declaration || ""}
+                      onChange={(e) => setData((p) => ({ ...p, declaration: e.target.value }))}
+                      className="w-full border border-slate-300 rounded px-2 py-1 bg-white resize-y"
+                    />
+                  </label>
                 </div>
               )}
 
