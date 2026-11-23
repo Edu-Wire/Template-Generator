@@ -168,6 +168,55 @@ describe("Export Endpoints — Master Template Verification", () => {
     assert.ok(arrayBuffer.byteLength > 1000, "PDF buffer must be non-empty");
   });
 
+  const sopSections = [
+    { title: "Student Introduction", content: "My name is **Umar Ali Khan**, and I am from Bhopal." },
+    { title: "Academic Background", content: "I completed my B.Tech Computer Science at Sample College." },
+    { title: "Closing", content: "Thank you for considering my application." },
+  ];
+
+  it("SOP DOCX (sections fallback) uses the approved layout: salutation, no section headings, sign-off", async () => {
+    const req = new NextRequest("http://localhost:3000/api/export/docx", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: testSessionCookie() },
+      body: JSON.stringify({
+        title: "Umar Ali Khan – Statement of Purpose (University of Catania)",
+        studentName: "Umar Ali Khan",
+        documentType: "SOP",
+        sections: sopSections,
+      }),
+    });
+    const res = await exportDocx(req);
+    assert.equal(res.status, 200);
+    const { value: text } = await mammoth.extractRawText({ buffer: Buffer.from(await res.arrayBuffer()) });
+    assert.ok(text.startsWith("STATEMENT OF PURPOSE"));
+    assert.ok(text.includes("Dear Admissions Committee,"));
+    assert.ok(!text.includes("Student Introduction"), "section headings are not printed");
+    assert.ok(!text.includes("Academic Background"));
+    assert.ok(text.indexOf("Dear Admissions Committee,") < text.indexOf("My name is"));
+    assert.ok(/Yours sincerely,\s*Umar Ali Khan\s*$/.test(text.trim()));
+  });
+
+  it("SOP PDF uses the approved layout: salutation and sign-off, no section headings", async () => {
+    const req = new NextRequest("http://localhost:3000/api/export/pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: testSessionCookie() },
+      body: JSON.stringify({
+        title: "Umar Ali Khan – Statement of Purpose (University of Catania)",
+        studentName: "Umar Ali Khan",
+        documentType: "SOP",
+        sections: sopSections,
+      }),
+    });
+    const res = await exportPdf(req);
+    assert.equal(res.status, 200);
+    const pdf = Buffer.from(await res.arrayBuffer()).toString("latin1");
+    assert.ok(pdf.includes("Dear Admissions Committee,"));
+    assert.ok(pdf.includes("Yours sincerely,"));
+    assert.ok(pdf.includes("Umar Ali Khan"));
+    assert.ok(!pdf.includes("(Student Introduction)"), "section headings are not printed");
+    assert.ok(!pdf.includes("(Academic Background)"));
+  });
+
   it("DOCX export handles custom font family including Calibri", async () => {
     const req = new NextRequest("http://localhost:3000/api/export/docx", {
       method: "POST",

@@ -28,6 +28,7 @@ import type {
 } from "@/types/normalizedStudent";
 import type { CourseCategory } from "@/features/document-generator/guidance/types";
 import { looksLikeSubjectsList } from "./mapNormalizedToResume";
+import { cleanIntakes } from "./programTiming";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -292,21 +293,74 @@ function mapEnglishTest(tests: CrmTest[] | undefined): NormalizedEnglishTest | u
   };
 }
 
+/** A 24-character hex string is a database id, never a display name. */
+const OBJECT_ID_RE = /^[0-9a-f]{24}$/i;
+
+/**
+ * Display name from a CRM reference. Accepts `{ name }`, `{ title }`, a plain string, or a flat
+ * fallback field. A bare database id is rejected so it can never end up in a document.
+ */
+export function resolveRefName(ref: unknown, ...flatFallbacks: unknown[]): string {
+  const candidates: unknown[] = [];
+  if (typeof ref === "string") {
+    candidates.push(ref);
+  } else if (ref && typeof ref === "object") {
+    const r = ref as Record<string, unknown>;
+    candidates.push(
+      r.name,
+      r.title,
+      r.institutionName, // live CRM: university = { _id, institutionName }
+      r.officialName,
+      r.universityName,
+      r.collegeName,
+      r.courseName
+    );
+  }
+  candidates.push(...flatFallbacks);
+  for (const c of candidates) {
+    if (typeof c !== "string") continue;
+    const v = c.trim();
+    if (v && !OBJECT_ID_RE.test(v)) return v;
+  }
+  return "";
+}
+
+/**
+ * Degree level from the CRM's explicit `level` ("PG", "UG", "Postgraduate", …). Null when the
+ * CRM leaves it empty or sends something unrecognised, so the course title is used instead.
+ */
+export function levelFromCrm(level?: string | null): string | null {
+  const v = (level || "").trim().toLowerCase();
+  if (!v) return null;
+  if (/^(pg|post[\s-]?graduate|master)/.test(v)) return "Master's";
+  if (/^(ug|under[\s-]?graduate|bachelor)/.test(v)) return "Bachelor's";
+  if (/^(phd|ph\.d|doctor)/.test(v)) return "PhD";
+  return null;
+}
+
 function mapAppliedProgram(p: CrmAppliedProgram, idx: number): NormalizedAppliedProgram {
-  const courseTitle = p.course?.title?.trim() || "";
-  const countryName = p.country?.name?.trim() || "";
-  const uniName = p.university?.name?.trim() || "";
+  const courseTitle = resolveRefName(p.course, p.courseTitle, p.courseName);
+  const countryName = resolveRefName(p.country, p.countryName);
+  const uniName = resolveRefName(p.university, p.universityName, p.institutionName);
 
   return {
     id: p._id ?? `app-prog-${idx}`,
     country: countryName,
     university: uniName,
     course: courseTitle,
-    degreeLevel: deriveDegreeLevel(courseTitle),
+    degreeLevel: levelFromCrm(p.level) ?? deriveDegreeLevel(courseTitle),
     courseCategory: deriveCourseCategory(courseTitle),
     referenceNo: p.referenceNo?.trim(),
     createdAt: p.createdAt,
+    ...(toPositiveInt(p.durationYear) ? { durationYears: toPositiveInt(p.durationYear) } : {}),
+    ...(toPositiveInt(p.durationMonth) ? { durationMonths: toPositiveInt(p.durationMonth) } : {}),
+    ...(cleanIntakes(p.intakes).length > 0 ? { intakes: cleanIntakes(p.intakes) } : {}),
   };
+}
+
+function toPositiveInt(value: unknown): number | undefined {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim()) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -626,17 +680,43 @@ export function mapCrmToNormalizedStudent(
 
   const englishTest = mapEnglishTest(rawTests);
 
-  // 9. Applied programs (preserving all)
-  const allPrograms = (snapshot.appliedPrograms ?? []).map((p, i) => mapAppliedProgram(p, i));
+  // 9. Programs: applied first, then shortlisted. A shortlisted entry that is also applied
+  // (same id, or same university + course) is listed once, as applied.
+  const appliedPrograms = (snapshot.appliedPrograms ?? []).map((p, i) => ({
+    ...mapAppliedProgram(p, i),
+    status: "applied" as const,
+  }));
+  const programKey = (p: { university: string; course: string }) =>
+    `${p.university.trim().toLowerCase()}||${p.course.trim().toLowerCase()}`;
+  const seenIds = new Set(appliedPrograms.map((p) => p.id));
+  const seenKeys = new Set(appliedPrograms.map(programKey));
+  const shortlistedPrograms = (snapshot.shortlistedPrograms ?? [])
+    .map((p, i) => ({
+      ...mapAppliedProgram(p, i),
+      id: p._id ?? `short-prog-${i}`,
+      status: "shortlisted" as const,
+    }))
+    .filter((p) => {
+      if (seenIds.has(p.id) || seenKeys.has(programKey(p))) return false;
+      seenIds.add(p.id);
+      seenKeys.add(programKey(p));
+      return true;
+    });
+  const allPrograms = [...appliedPrograms, ...shortlistedPrograms];
 
   // Active program selection:
-  // Use options.activeProgramId if passed, else first program with country specified, else first program
+  // options.activeProgramId if passed, else the first applied program (with a country),
+  // else the first shortlisted program.
   let activeProgram = options.activeProgramId
     ? allPrograms.find((p) => p.id === options.activeProgramId)
     : undefined;
 
   if (!activeProgram) {
-    activeProgram = allPrograms.find((p) => Boolean(p.country && p.country.length > 0)) ?? allPrograms[0];
+    activeProgram =
+      appliedPrograms.find((p) => Boolean(p.country && p.country.length > 0)) ??
+      appliedPrograms[0] ??
+      shortlistedPrograms.find((p) => Boolean(p.country && p.country.length > 0)) ??
+      shortlistedPrograms[0];
   }
 
   // 10. Family & Parents

@@ -106,6 +106,13 @@ export interface NormalizedAppliedProgram {
   courseCategory: string;
   referenceNo?: string;
   createdAt?: string;
+  /** Whether the student has applied to this program or only shortlisted it. */
+  status?: "applied" | "shortlisted";
+  /** Program length as stated by the CRM. */
+  durationYears?: number;
+  durationMonths?: number;
+  /** Intakes the program offers, as stated by the CRM (e.g. ["September"]). */
+  intakes?: string[];
 }
 
 // ---------------------------------------------------------------------------

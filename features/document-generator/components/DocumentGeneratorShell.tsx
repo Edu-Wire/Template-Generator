@@ -340,7 +340,7 @@ function GeneratorLayout() {
           let loadedAaravData = testStudentData;
           if (typeof window !== "undefined") {
             try {
-              const saved = sessionStorage.getItem(studentStorageKey);
+              const saved = localStorage.getItem(studentStorageKey) ?? sessionStorage.getItem(studentStorageKey);
               if (saved) {
                 loadedAaravData = JSON.parse(saved);
               }

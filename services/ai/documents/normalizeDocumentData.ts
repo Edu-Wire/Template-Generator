@@ -15,6 +15,8 @@
  */
 
 import { DocumentType, DOCUMENT_TYPES, isValidDocumentType } from "../config/documentTypes";
+import type { NormalizedQualification } from "@/types/normalizedStudent";
+import { deriveSubjectsText, displayQualificationTitle, selectRelevantQualification } from "@/services/normalization/selectRelevantQualification";
 import {
   CanonicalDocumentData,
   CanonicalApplicant,
@@ -105,7 +107,33 @@ export function normalizeDocumentData(input: NormalizationInput): CanonicalDocum
 
   // 2. Education Normalization
   const rawAcademics = asRecord(raw.education || raw.academics);
-  const latestQual = asRecord(rawAcademics.latest || rawAcademics);
+  let latestQual = asRecord(rawAcademics.latest || rawAcademics);
+
+  // When the full qualification list is available (NormalizedStudentProfile), ground the
+  // education facts in the record matching the target program's level:
+  // Bachelor's -> 12th, Master's -> bachelor's.
+  if (Array.isArray(rawAcademics.qualifications) && rawAcademics.qualifications.length > 0) {
+    const rawApplications = asRecord(raw.applications);
+    const targetDegreeLevel = safeString(
+      asRecord(raw.destination).degreeLevel ||
+        asRecord(rawApplications.activeProgram).degreeLevel
+    );
+    const picked = selectRelevantQualification(
+      rawAcademics.qualifications as NormalizedQualification[],
+      targetDegreeLevel
+    )?.qualification;
+    if (picked) {
+      latestQual = {
+        qualification: displayQualificationTitle(picked),
+        levelOfStudy: picked.levelOfStudy,
+        institution: picked.institution,
+        board: picked.boardOrUniversity,
+        completionYear: picked.completionYear,
+        score: picked.score,
+        subjects: deriveSubjectsText(picked),
+      };
+    }
+  }
 
   const education: CanonicalEducation = {
     qualification: safeString(

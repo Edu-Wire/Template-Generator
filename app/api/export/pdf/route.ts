@@ -446,12 +446,28 @@ export async function POST(req: NextRequest) {
         doc.setLineWidth(0.3);
         doc.line((pageWidth - textWidth) / 2, currentY + 1.2, (pageWidth + textWidth) / 2, currentY + 1.2);
       }
-      currentY += 8;
+      currentY += isSop ? 11 : 8;
+
+      // SOP follows the approved sample: salutation, plain justified paragraphs (no per-section
+      // headings), then "Yours sincerely," and the bold student name.
+      const sopBodyFont = isSop ? "helvetica" : "times";
+      const sopBodyFontSize = isSop ? 10.5 : 10;
+      const sopLineHeight = isSop ? 5.0 : 4.6;
+      const sopParaGap = isSop ? 4.0 : 3.5;
+
+      if (isSop) {
+        doc.setFont(sopBodyFont, "normal");
+        doc.setFontSize(sopBodyFontSize);
+        doc.setTextColor(17, 24, 39);
+        doc.text("Dear Admissions Committee,", margin, currentY);
+        currentY += sopLineHeight + sopParaGap;
+      }
 
       for (const section of sections) {
         checkPageBreak(12);
 
         if (
+          !isSop &&
           section.title &&
           section.title.toLowerCase() !== headerTitle.toLowerCase() &&
           !section.title.toLowerCase().includes("statement of purpose")
@@ -465,11 +481,11 @@ export async function POST(req: NextRequest) {
         const rawText = cleanTextForPdf(section.content || "");
         const paragraphs = rawText.split(/\n+/).filter(Boolean);
 
-        doc.setFont("times", "normal");
-        doc.setFontSize(10);
+        doc.setFont(sopBodyFont, "normal");
+        doc.setFontSize(sopBodyFontSize);
+        doc.setTextColor(17, 24, 39);
 
-        const sopLineHeight = 4.6;
-        const sopLineHeightFactor = (sopLineHeight * (72 / 25.4)) / 10;
+        const sopLineHeightFactor = (sopLineHeight * (72 / 25.4)) / sopBodyFontSize;
 
         for (const p of paragraphs) {
           const cleanP = p.replace(/\*\*/g, "");
@@ -481,10 +497,24 @@ export async function POST(req: NextRequest) {
             maxWidth: printableWidth,
             lineHeightFactor: sopLineHeightFactor,
           });
-          currentY += lines.length * sopLineHeight + 3.5;
+          currentY += lines.length * sopLineHeight + sopParaGap;
         }
 
-        currentY += 2;
+        if (!isSop) currentY += 2;
+      }
+
+      if (isSop) {
+        checkPageBreak(sopLineHeight * 2 + 4);
+        const signerName = (studentName || "").trim() || (title || "").split(/\s[–—-]\s/)[0].trim();
+        doc.setFont(sopBodyFont, "normal");
+        doc.setFontSize(sopBodyFontSize);
+        doc.setTextColor(17, 24, 39);
+        doc.text("Yours sincerely,", margin, currentY);
+        currentY += sopLineHeight;
+        if (signerName && !/statement of purpose/i.test(signerName)) {
+          doc.setFont(sopBodyFont, "bold");
+          doc.text(cleanTextForPdf(signerName), margin, currentY);
+        }
       }
     }
 

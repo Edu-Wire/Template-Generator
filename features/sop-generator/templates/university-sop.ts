@@ -62,7 +62,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 1,
       editable: true,
       regeneratable: true,
-      content: `My name is **{{student.fullName}}**, and I am a prospective student from {{student.city}}, {{student.country}}. I am submitting this Statement of Purpose to formally apply for admission to the **{{destination.course}}** programme at **{{destination.university}}**. Having completed my {{academics.latestQualification}} at {{academics.institution}}, I have prepared this statement to articulate my academic background, motivations, and future aspirations in this discipline.`,
+      content: `My name is **{{student.fullName}}**, and I am a prospective student[[ from {{student.city}}, {{student.country}}]]. I am submitting this Statement of Purpose to formally apply for admission[[ to the **{{destination.course}}** programme[[ at **{{destination.university}}**]]]]. [[Having completed my {{academics.latestQualification}} at {{academics.institution}}, ]]I have prepared this statement to articulate my academic background, motivations, and future aspirations in this discipline.`,
       sourceFacts: {
         "Full Name": "{{student.fullName}}",
         Location: "{{student.city}}, {{student.country}}",
@@ -81,7 +81,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 2,
       editable: true,
       regeneratable: false,
-      content: `I completed my {{academics.latestQualification}} from **{{academics.institution}}** under the {{academics.board}} in **{{academics.completionYear}}**, focusing on {{academics.subjects}} and achieving an aggregate score of **{{academics.percentage}}**. My studies provided me with a solid foundation in core analytical and conceptual coursework, preparing me for advanced international study.`,
+      content: `I completed my [[{{academics.latestQualification}}]][[ from **{{academics.institution}}**]][[ under the {{academics.board}}]][[ in **{{academics.completionYear}}**]][[, focusing on {{academics.subjects}}]][[ and achieving an aggregate score of **{{academics.percentage}}**]]. My studies provided me with a solid foundation in core analytical and conceptual coursework, preparing me for advanced international study.`,
       sourceFacts: {
         Qualification: "{{academics.latestQualification}}",
         Institution: "{{academics.institution}}",
@@ -101,7 +101,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 3,
       editable: true,
       regeneratable: true,
-      content: `My interest in this field developed naturally through my academic coursework and focused engagement with {{academics.subjects}}. As I learned more about the core principles and their practical applications, I recognized the importance of this discipline in solving contemporary problems. This motivated me to pursue advanced, systematic education in {{destination.course}} to build both depth and specialized domain knowledge.`,
+      content: `My interest in this field developed naturally through my academic coursework[[ and focused engagement with {{academics.subjects}}]]. As I learned more about the core principles and their practical applications, I recognized the importance of this discipline in solving contemporary problems. This motivated me to pursue advanced, systematic education[[ in {{destination.course}}]] to build both depth and specialized domain knowledge.`,
       sourceFacts: {
         Subjects: "{{academics.subjects}}",
         Course: "{{destination.course}}",
@@ -117,7 +117,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 4,
       editable: true,
       regeneratable: true,
-      content: `The **{{destination.course}}** curriculum offers the structured coursework and practical depth I need at this stage of my education. Building directly upon my prior studies in {{academics.subjects}}, the curriculum combines rigorous core subjects with specialized modules that directly align with my academic interests and professional objectives.`,
+      content: `The [[**{{destination.course}}** ]]curriculum offers the structured coursework and practical depth I need at this stage of my education. The curriculum combines rigorous core subjects with specialized modules that directly align with my academic interests and professional objectives.[[ It builds directly on my prior studies in {{academics.subjects}}.]][[ The programme lasts {{destination.duration}}.]][[ The programme {{destination.intakeText}}.]]`,
       sourceFacts: {
         Course: "{{destination.course}}",
         Degree: "{{destination.degreeLevel}}",
@@ -134,7 +134,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 5,
       editable: true,
       regeneratable: true,
-      content: `I chose **{{destination.university}}** because of its established academic curriculum, dedicated faculty, and focused learning environment in **{{destination.city}}**, {{destination.country}}. The institution's emphasis on high academic standards and modern academic resources makes it an ideal setting for my studies in {{destination.course}}.`,
+      content: `[[I chose **{{destination.university}}** because of its established academic curriculum, dedicated faculty, and focused learning environment[[ in **{{destination.city}}**, {{destination.country}}]]. The institution's emphasis on high academic standards and modern academic resources makes it an ideal setting for my studies[[ in {{destination.course}}]].]]`,
       sourceFacts: {
         University: "{{destination.university}}",
         City: "{{destination.city}}",
@@ -151,7 +151,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 6,
       editable: true,
       regeneratable: true,
-      content: `My academic trajectory has equipped me with the analytical mindset, subject background, and study habits needed to succeed in this program. Having secured **{{academics.percentage}}** in {{academics.latestQualification}} while studying {{academics.subjects}}, I am well-prepared to engage with advanced coursework and contribute productively to classroom discussions at **{{destination.university}}**.`,
+      content: `My academic trajectory has equipped me with the analytical mindset, subject background, and study habits needed to succeed in this program. [[Having secured **{{academics.percentage}}** in {{academics.latestQualification}}, ]]I am well-prepared to engage with advanced coursework and contribute productively to classroom discussions[[ at **{{destination.university}}**]].[[ My prior studies in {{academics.subjects}} give me the subject background to do so.]]`,
       sourceFacts: {
         Qualification: "{{academics.latestQualification}}",
         Subjects: "{{academics.subjects}}",
@@ -168,7 +168,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 7,
       editable: true,
       regeneratable: true,
-      content: `Upon completing my degree in **{{destination.course}}**, my objective is to begin my career in the sector, applying the analytical methodologies and practical training acquired during my studies to real-world challenges. Over the long term, I aspire to take on greater responsibility and contribute meaningfully to the advancement of my professional field.`,
+      content: `Upon completing my degree[[ in **{{destination.course}}**]], my objective is to begin my career in the sector, applying the analytical methodologies and practical training acquired during my studies to real-world challenges. Over the long term, I aspire to take on greater responsibility and contribute meaningfully to the advancement of my professional field.`,
       sourceFacts: {
         Course: "{{destination.course}}",
       },
@@ -183,7 +183,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 8,
       editable: true,
       regeneratable: true,
-      content: `As a student at **{{destination.university}}**, I intend to participate actively in academic life, engaging in collaborative study with peers and contributing to departmental discussions. Following graduation, I aim to apply my international training and technical competencies to contribute responsibly to my industry and home community.`,
+      content: `[[As a student at **{{destination.university}}**, ]]I intend to participate actively in academic life, engaging in collaborative study with peers and contributing to departmental discussions. Following graduation, I aim to apply my international training and technical competencies to contribute responsibly to my industry and home community.`,
       sourceFacts: {
         University: "{{destination.university}}",
         Course: "{{destination.course}}",
@@ -199,7 +199,7 @@ export const universitySopTemplate: SopTemplate = {
       order: 9,
       editable: true,
       regeneratable: false,
-      content: `Thank you for your time and consideration of my application to the **{{destination.course}}** programme at **{{destination.university}}**. I am fully prepared to meet the academic rigor of the institution and look forward to the opportunity to join the university community.`,
+      content: `Thank you for your time and consideration of my application[[ to the **{{destination.course}}** programme[[ at **{{destination.university}}**]]]]. I am fully prepared to meet the academic rigor of the institution and look forward to the opportunity to join the university community.`,
       sourceFacts: {
         University: "{{destination.university}}",
         Course: "{{destination.course}}",

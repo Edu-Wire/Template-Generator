@@ -198,6 +198,8 @@ export interface StudentDocumentContext {
     duration: string;
     intakeMonth: string;
     intakeYear: string;
+    /** Sentence fragment about the intake(s), e.g. "starts in September". */
+    intakeText?: string;
     consulate: string;
     consulateCity: string;
     consulateAddress: string;
@@ -330,6 +332,12 @@ export interface SopDraftRecord {
   studentId?: string;
   /** Operator (session sub) who first saved the draft. */
   createdBy?: string;
+  /**
+   * Applied program (CRM application id) this draft was written for. Drafts are scoped per
+   * student + program so switching programs never overwrites another program's SOP.
+   * Absent on drafts saved before program scoping existed.
+   */
+  programId?: string;
   id: string;
   documentType?: SopDocumentType;
   studentName: string;

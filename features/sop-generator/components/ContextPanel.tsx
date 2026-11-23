@@ -15,6 +15,7 @@ import type {
 import { AlignmentStatusBadge } from "@/features/academic-alignment/components/AlignmentStatusBadge";
 import type { ApplicationTarget } from "@/features/document-generator/guidance/types";
 import type { NormalizedAppliedProgram } from "@/types/normalizedStudent";
+import { formatProgramLabel } from "../lib/programSelection";
 import { ApplicationTargetForm } from "@/features/document-generator/forms/ApplicationTargetForm";
 import { SectionEditor } from "./SectionEditor";
 
@@ -497,7 +498,7 @@ export function ContextPanel({
                   htmlFor="sop-context-prog-switcher"
                   className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block"
                 >
-                  Switch Applied Program ({availablePrograms.length} applied):
+                  Write SOP for Program ({availablePrograms.length} applied / shortlisted):
                 </label>
                 <select
                   id="sop-context-prog-switcher"
@@ -507,10 +508,20 @@ export function ContextPanel({
                 >
                   {availablePrograms.map((prog) => (
                     <option key={prog.id} value={prog.id}>
-                      {prog.university} — {prog.course}
+                      {formatProgramLabel(prog)}
                     </option>
                   ))}
                 </select>
+              </div>
+            )}
+            {availablePrograms.length === 1 && (
+              <div className="p-3.5 rounded-xl bg-white border border-slate-200/80 shadow-xs space-y-1">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                  Program
+                </span>
+                <span className="text-xs font-medium text-slate-800 block">
+                  {formatProgramLabel(availablePrograms[0])}
+                </span>
               </div>
             )}
 

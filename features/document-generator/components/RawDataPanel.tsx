@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { CrmSnapshot } from "@/types/crmSnapshot";
+import { resolveRefName } from "@/services/normalization/mapCrmToNormalizedStudent";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -321,9 +322,9 @@ export function RawDataPanel({ snapshot, source }: RawDataPanelProps) {
           <SectionHeader icon="🎯" title="Applied Programs" count={programs.length} />
           {programs.map((p, i) => (
             <div key={p._id ?? i} className="mb-2 pl-1 border-l-2 border-amber-200">
-              <p className="text-[11px] font-semibold text-slate-700">{p.course?.title}</p>
+              <p className="text-[11px] font-semibold text-slate-700">{resolveRefName(p.course, p.courseTitle, p.courseName)}</p>
               <p className="text-[10px] text-slate-500">
-                {p.university?.name} — {p.country?.name}
+                {resolveRefName(p.university, p.universityName)} — {resolveRefName(p.country, p.countryName)}
               </p>
               <p className="text-[10px] text-slate-400">{p.referenceNo}</p>
             </div>

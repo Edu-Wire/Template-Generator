@@ -67,17 +67,34 @@ export function docSectionsToHtml(
     docType === "SOP" || (title ? title.toLowerCase().includes("statement of purpose") : false);
 
   if (isSop) {
-    const headerHtml = `<div style="text-align: center; margin-bottom: 18px;"><span style="font-size: 15px; font-weight: bold; text-decoration: underline; letter-spacing: 0.08em;">STATEMENT OF PURPOSE</span></div>`;
+    // Layout follows the approved SOP sample: centered bold underlined title, salutation,
+    // justified paragraphs, "Yours sincerely," + bold name. The title is a real <p> with
+    // text-align (not a styled <div>/<span>) because the editor schema drops div/span styles,
+    // which is what left the title left-aligned and small.
+    const headerHtml = `<p style="text-align: center"><strong><u>STATEMENT OF PURPOSE</u></strong></p>`;
+    const salutationHtml = `<p style="text-align: left">Dear Admissions Committee,</p>`;
     const bodyHtml = sections
-      .map((s) => {
-        const bodyContent = s.content
+      .map((s) =>
+        s.content
           .split("\n\n")
-          .map((para) => `<p style="text-align: justify; margin-bottom: 14px; line-height: 1.35;">${fmt(para).replace(/\n/g, "<br/>")}</p>`)
-          .join("");
-        return bodyContent;
-      })
+          .filter((para) => para.trim().length > 0) // a section with nothing left renders nothing
+          .map((para) => `<p style="text-align: justify">${fmt(para).replace(/\n/g, "<br/>")}</p>`)
+          .join("")
+      )
       .join("");
-    return `<div style="font-family: 'Times New Roman', Times, Georgia, serif; font-size: 14px; line-height: 1.35; color: #111827;">${headerHtml}${bodyHtml}</div>`;
+
+    // Student name comes from the document title ("Name – Statement of Purpose (University)").
+    const signerName = (title || "").split(/\s[–—-]\s/)[0].trim();
+    const looksLikeName =
+      signerName.length > 0 && !/statement of purpose/i.test(signerName) && signerName.length <= 80;
+    const closingHtml = looksLikeName
+      ? `<p style="text-align: left">Yours sincerely,<br/><strong>${signerName
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")}</strong></p>`
+      : `<p style="text-align: left">Yours sincerely,</p>`;
+
+    return `<div style="font-family: Calibri, Carlito, Aptos, 'Segoe UI', sans-serif; font-size: 11pt; line-height: 1.35; color: #111827;">${headerHtml}${salutationHtml}${bodyHtml}${closingHtml}</div>`;
   }
 
   return sections

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { NormalizedAppliedProgram } from "@/types/normalizedStudent";
+import { formatProgramLabel } from "../lib/programSelection";
 import type { DataSource, SopDocumentType } from "../types/sop-generator";
 
 // ── Crisp bespoke SVG Icons ──────────────────────────────────────────────────
@@ -276,22 +277,38 @@ export function WorkspaceHeader({
                 </div>
               </button>
 
-              {/* Program switcher if multiple programs available */}
+              {/* Applied program: dropdown when several, read-only label when one */}
               {availablePrograms.length > 1 && onProgramChange && (
                 <div className="border-l border-slate-200/90 pl-1.5 pr-1">
                   <select
                     id="sop-prog-switcher"
                     value={selectedProgramId}
                     onChange={(e) => onProgramChange(e.target.value)}
-                    className="text-[10px] font-medium text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-0.5 max-w-[110px] md:max-w-[140px] truncate focus:outline-none focus:border-slate-800 cursor-pointer shadow-2xs"
-                    title="Select applied program"
+                    className="text-[10px] font-medium text-slate-700 bg-white border border-slate-200 rounded px-1.5 py-0.5 max-w-[180px] md:max-w-[320px] truncate focus:outline-none focus:border-slate-800 cursor-pointer shadow-2xs"
+                    title={
+                      availablePrograms.find((p) => p.id === selectedProgramId)
+                        ? formatProgramLabel(availablePrograms.find((p) => p.id === selectedProgramId)!)
+                        : "Select applied program"
+                    }
+                    aria-label="Applied program for this SOP"
                   >
                     {availablePrograms.map((prog) => (
                       <option key={prog.id} value={prog.id}>
-                        {prog.university} — {prog.course}
+                        {formatProgramLabel(prog)}
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+              {availablePrograms.length === 1 && (
+                <div className="border-l border-slate-200/90 pl-1.5 pr-1">
+                  <span
+                    id="sop-prog-label"
+                    className="text-[10px] font-medium text-slate-700 max-w-[180px] md:max-w-[320px] truncate block"
+                    title={formatProgramLabel(availablePrograms[0])}
+                  >
+                    {formatProgramLabel(availablePrograms[0])}
+                  </span>
                 </div>
               )}
 

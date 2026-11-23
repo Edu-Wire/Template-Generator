@@ -38,6 +38,12 @@ import {
 } from "@/services/academicAlignment/academicAlignmentEngine";
 import { CrmApiStudentDataProvider } from "@/services/webhook/studentDataProvider";
 import { mapCrmToNormalizedStudent } from "@/services/normalization";
+import {
+  classifyTargetLevel,
+  deriveSubjectsText,
+  displayQualificationTitle,
+  selectRelevantQualification,
+} from "@/services/normalization/selectRelevantQualification";
 import { connectToDatabase } from "@/lib/db";
 import {
   AcademicAlignmentResolutionModel,
@@ -220,6 +226,8 @@ export async function POST(req: NextRequest) {
         if (programId && crmProfile.applications?.all) {
           targetProgram = crmProfile.applications.all.find((p) => p.id === programId) || null;
         }
+        // NOTE: when a programId is supplied but not found, we deliberately do NOT fall back to
+        // another application here — the client context below carries the chosen program.
         if (!targetProgram && !context.destination?.course && crmProfile.applications?.activeProgram) {
           targetProgram = crmProfile.applications.activeProgram;
         }
@@ -415,15 +423,24 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Step 8: Build Sanitized Context for Generation ─────────────────────────
-  const primaryQual = qualifications[0];
+  // Bachelor's program -> 12th record; Master's program -> bachelor's record.
+  const primaryQual =
+    selectRelevantQualification(qualifications, targetProgram.degreeLevel)?.qualification ??
+    qualifications[0];
+  const targetLevel = classifyTargetLevel(targetProgram.degreeLevel);
   const sanitizedContext: StudentDocumentContext = {
     ...context,
     academics: {
       ...context.academics,
-      latestQualification: primaryQual?.qualification || context.academics?.latestQualification,
-      subjects: primaryQual?.fieldOfStudy || context.academics?.subjects,
+      latestQualification: displayQualificationTitle(primaryQual) || context.academics?.latestQualification,
+      subjects: deriveSubjectsText(primaryQual) || context.academics?.subjects,
       institution: primaryQual?.institution || context.academics?.institution,
       percentage: primaryQual?.score || context.academics?.percentage,
+      completionYear: primaryQual?.completionYear || context.academics?.completionYear,
+      previousDegree:
+        targetLevel === "MASTERS" || targetLevel === "DOCTORATE"
+          ? displayQualificationTitle(primaryQual) || context.academics?.previousDegree
+          : "",
     },
     destination: {
       ...context.destination,

@@ -77,6 +77,34 @@ export function getNaturalFallback(path: string): string | null {
 export interface InterpolateOptions {
   /** If true, every missing value (including neutral fields) renders as [MISSING: path]. */
   rawMissingTokens?: boolean;
+  /**
+   * If true, nothing is ever rendered as `[MISSING: …]`. An optional segment `[[ … ]]` that
+   * contains an unresolved placeholder is dropped whole, and any other unresolved placeholder
+   * is removed. The gaps are reported separately (see getUnresolvedPlaceholders) so the UI can
+   * list them in a "Missing Details" panel instead of showing them inside the letter.
+   */
+  omitMissing?: boolean;
+}
+
+/**
+ * Optional segment: `[[ from {{student.city}}, ]]` — kept only when every placeholder inside
+ * resolves. Segments may nest; this matches an innermost one (no `[[` inside it).
+ */
+const INNERMOST_SEGMENT_RE = /\[\[((?:(?!\[\[)[\s\S])*?)\]\]/;
+
+function tidyAfterOmission(text: string): string {
+  return text
+    // Emphasis left empty by an omitted value ("****", "**  **", "__") must never show up.
+    .replace(/\*\*\s*\*\*/g, "")
+    .replace(/(^|[^_])__\s*__/g, "$1")
+    .replace(/[ \t]+([,.;:!?])/g, "$1")
+    .replace(/([,;:])\s*([.!?])/g, "$2")
+    .replace(/,\s*,/g, ",")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim()
+    // A paragraph that is nothing but leftover punctuation means every clause was omitted.
+    .replace(/^[\s.,;:!?]+$/, "");
 }
 
 /**
@@ -93,14 +121,41 @@ export function interpolate(
   ctx: StudentDocumentContext,
   options?: InterpolateOptions
 ): string {
-  return template.replace(PLACEHOLDER_RE, (_match, path: string) => {
+  const omit = Boolean(options?.omitMissing);
+
+  // Optional segments: dropped whole when omitting and anything inside is unresolved;
+  // otherwise just unwrapped so placeholders behave exactly as before.
+  // Resolved innermost-first so segments can nest ("[[ at X[[, in {{city}}]] ]]").
+  let withSegments = template;
+  for (let guard = 0; guard < 50 && INNERMOST_SEGMENT_RE.test(withSegments); guard++) {
+    withSegments = withSegments.replace(INNERMOST_SEGMENT_RE, (_m, inner: string) => {
+      if (!omit) return inner;
+      const allResolved = extractPlaceholders(inner).every((p) => resolvePath(ctx, p) !== undefined);
+      return allResolved ? inner : "";
+    });
+  }
+
+  const rendered = withSegments.replace(PLACEHOLDER_RE, (_match, path: string) => {
     const value = resolvePath(ctx, path);
     if (value !== undefined) {
       return value;
     }
+    if (omit) return "";
     const neutral = options?.rawMissingTokens ? null : getNaturalFallback(path);
     return neutral !== null ? neutral : `[MISSING: ${path}]`;
   });
+
+  return omit ? tidyAfterOmission(rendered) : rendered;
+}
+
+/**
+ * Placeholder paths used by `template` that have no value in `ctx` — i.e. the details that
+ * would be missing from the rendered text. Optional neutral-fallback fields are not reported.
+ */
+export function getUnresolvedPlaceholders(template: string, ctx: StudentDocumentContext): string[] {
+  return extractPlaceholders(template).filter(
+    (p) => resolvePath(ctx, p) === undefined && getNaturalFallback(p) === null
+  );
 }
 
 /**

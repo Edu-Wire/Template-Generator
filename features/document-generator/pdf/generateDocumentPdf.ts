@@ -38,6 +38,8 @@ export interface PdfNamingOptions {
   documentType?: string;
   /** Optional explicit filename (e.g. "Student_Name_CV.pdf"). */
   customFilename?: string;
+  /** Set to false to build the PDF without triggering a browser download (default true). */
+  download?: boolean;
 }
 
 /**
@@ -647,7 +649,7 @@ export async function generateDocumentPdf(
     });
 
     const pdfBase64 = pdf.output("datauristring");
-    pdf.save(filename);
+    if (options?.download !== false) pdf.save(filename);
     return { filename, pdfBase64 };
   } finally {
     restoreImages();
