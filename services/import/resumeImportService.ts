@@ -23,6 +23,7 @@ import { parseDocxBuffer } from "./parsers/docxParser";
 import { extractPdfProfilePhoto } from "./parsers/pdfImageExtractor";
 import { parseDocumentDeterministically } from "./normalizers/deterministicParser";
 import { classifyResumeWithAi } from "./normalizers/aiResumeClassifier";
+import { recoverLinks } from "./normalizers/linkRecovery";
 import { detectCrmConflicts } from "./normalizers/crmConflictDetector";
 import { saveFileToGridFS } from "./storage/gridfsStorage";
 import { ResumeImportModel } from "@/models/ResumeImport";
@@ -104,6 +105,7 @@ export async function processResumeUpload(
   let rawText = "";
   let extractedPhotoUrl: string | undefined;
   let embeddedDocumentData: DocumentData | null = null;
+  let annotationLinks: string[] = [];
   const isDocx =
     fileName.toLowerCase().endsWith(".docx") ||
     mimeType.includes("wordprocessingml");
@@ -120,6 +122,7 @@ export async function processResumeUpload(
       extractPdfProfilePhoto(buffer),
     ]);
     rawText = pdfResult.text;
+    annotationLinks = pdfResult.links ?? [];
     if (pdfPhoto) {
       extractedPhotoUrl = pdfPhoto;
     }
@@ -212,6 +215,8 @@ export async function processResumeUpload(
       // Preserve original document section order
       sectionOrder: aiResult.data.sectionOrder,
     };
+    // The AI step drops URLs that are not in its schema; re-attach them from the raw text / PDF links.
+    mergedData = recoverLinks(mergedData, rawText, annotationLinks);
     ambiguousItems = aiResult.ambiguousItems;
     unmappedSnippets = deterministic.unmappedLines.slice(0, 10);
   }

@@ -158,3 +158,26 @@ describe("mergeImportedIntoCv duplicate detection (CRM wording vs resume wording
     assert.equal(res.data.internships?.length, 2);
   });
 });
+
+describe("mergeImportedIntoCv link fill", () => {
+  it("fills an empty website on a stored entry that the upload duplicates, without replacing a set one", () => {
+    const existing = {
+      personal: {},
+      education: [
+        { id: "a", qualification: "Grade 12th", institution: "Gyan Ganga International Academy", startDate: "2022", endDate: "2023" },
+        { id: "b", qualification: "Grade 10th", institution: "Gyan Ganga International Academy", startDate: "2020", endDate: "2021", website: "https://keep.me" },
+      ],
+    } as DocumentData;
+    const imported = {
+      personal: {},
+      education: [
+        { id: "x", qualification: "Grade 12th", institution: "Gyan Ganga International Academy", startDate: "2022", endDate: "2023", website: "https://school.edu" },
+        { id: "y", qualification: "Grade 10th", institution: "Gyan Ganga International Academy", startDate: "2020", endDate: "2021", website: "https://other.edu" },
+      ],
+    } as DocumentData;
+    const { data } = mergeImportedIntoCv(existing, imported);
+    assert.equal(data.education?.length, 2);
+    assert.equal(data.education?.[0].website, "https://school.edu");
+    assert.equal(data.education?.[1].website, "https://keep.me");
+  });
+});

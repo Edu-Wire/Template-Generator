@@ -69,6 +69,7 @@ Return a single JSON object with this exact shape:
       "startDate": "...",
       "endDate": "...",
       "address": "city/country if present",
+      "website": "institution website URL exactly as written (e.g. after 'Website:'), if present",
       "finalGrade": "CGPA or percentage or grade verbatim if present",
       "description": "verbatim subjects, description, or additional info if present"
     }
