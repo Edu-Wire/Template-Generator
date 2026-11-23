@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { ApplicationTarget } from "@/features/document-generator/guidance/types";
 import type { DocumentData } from "@/types";
 import { getStudentDocumentContext } from "../lib/applicationService";
+import { resolveRefName } from "@/services/normalization/mapCrmToNormalizedStudent";
 
 describe("Cross-Module Synchronization: Resume Builder <-> SOP Generator", () => {
   it("Overlaying applicationTarget populates SOP destination correctly", () => {
@@ -418,6 +419,6 @@ describe("Cross-Module Synchronization: Resume Builder <-> SOP Generator", () =>
     assert.equal(aafia.student.personalDetails?.firstName, "Aafia");
     assert.equal(aafia.student.personalDetails?.lastName, "Ameen");
     assert.equal(aafia.appliedPrograms.length, 1, "Aafia targets Politecnico di Torino");
-    assert.equal(aafia.appliedPrograms[0].university?.name, "Politecnico di Torino");
+    assert.equal(resolveRefName(aafia.appliedPrograms[0].university), "Politecnico di Torino");
   });
 });

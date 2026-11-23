@@ -13,6 +13,14 @@
 
 import type { StudentDocumentContext } from "@/features/sop-generator/types/sop-generator";
 import type { NormalizedStudentProfile } from "@/types/normalizedStudent";
+import {
+  classifyTargetLevel,
+  deriveSubjectsText,
+  displayQualificationTitle,
+  selectRelevantQualification,
+} from "./selectRelevantQualification";
+import { lookupUniversityCity } from "./universityCity";
+import { formatIntakeMonths, formatIntakePhrase, formatProgramDuration } from "./programTiming";
 
 export function mapNormalizedToSop(profile: NormalizedStudentProfile): StudentDocumentContext {
   const p = profile.personal;
@@ -31,6 +39,14 @@ export function mapNormalizedToSop(profile: NormalizedStudentProfile): StudentDo
       })
     | undefined;
   const visa = profile.visaLogistics;
+
+  // Ground the academic facts in the record that matches the program's level:
+  // Bachelor's -> 12th details, Master's -> bachelor's details.
+  const targetLevel = classifyTargetLevel(activeProg?.degreeLevel);
+  const relevantQual = selectRelevantQualification(
+    a.qualifications,
+    activeProg?.degreeLevel
+  )?.qualification;
 
   // Determine primary sponsor from family if available
   const sponsorName = fam?.father?.name || fam?.mother?.name || "";
@@ -53,13 +69,16 @@ export function mapNormalizedToSop(profile: NormalizedStudentProfile): StudentDo
     },
 
     academics: {
-      latestQualification: a.latest?.qualification || "",
-      institution: a.latest?.institution || "",
-      board: a.latest?.board || "",
-      completionYear: a.latest?.completionYear || "",
-      subjects: a.latest?.subjects || "",
-      percentage: a.latest?.score || "",
-      previousDegree: "",
+      latestQualification: displayQualificationTitle(relevantQual) || a.latest?.qualification || "",
+      institution: relevantQual?.institution || a.latest?.institution || "",
+      board: relevantQual?.boardOrUniversity || a.latest?.board || "",
+      completionYear: relevantQual?.completionYear || a.latest?.completionYear || "",
+      subjects: deriveSubjectsText(relevantQual) || a.latest?.subjects || "",
+      percentage: relevantQual?.score || a.latest?.score || "",
+      // For master's/postgraduate targets the selected record IS the bachelor's degree.
+      previousDegree: targetLevel === "MASTERS" || targetLevel === "DOCTORATE"
+        ? displayQualificationTitle(relevantQual)
+        : "",
     },
 
     tests: {
@@ -75,13 +94,17 @@ export function mapNormalizedToSop(profile: NormalizedStudentProfile): StudentDo
 
     destination: {
       country: activeProg?.country || "",
-      city: "", // Often not explicitly in program model
+      // CRM program records have no city: known universities are looked up, others stay "".
+      city: lookupUniversityCity(activeProg?.university),
       university: activeProg?.university || "",
       course: activeProg?.course || "",
       degreeLevel: activeProg?.degreeLevel || "",
-      duration: "", // Not present in CRM; not fabricated
-      intakeMonth: "",
+      // From the program record when the CRM states them; never invented. The CRM gives no
+      // intake year, so it stays empty.
+      duration: formatProgramDuration(activeProg?.durationYears, activeProg?.durationMonths),
+      intakeMonth: formatIntakeMonths(activeProg?.intakes),
       intakeYear: "",
+      intakeText: formatIntakePhrase(activeProg?.intakes),
       consulate: visa?.consulate?.name || "",
       consulateCity: visa?.consulate?.city || "",
       consulateAddress: visa?.consulate?.address || "",

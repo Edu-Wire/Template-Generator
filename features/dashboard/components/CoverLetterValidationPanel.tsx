@@ -14,9 +14,12 @@ interface CoverLetterValidationPanelProps {
   onClose: () => void;
   onSelectField: (field: ValidationFieldDefinition) => void;
   className?: string;
+  /** Name of the document the details belong to, e.g. "Statement of Purpose". */
+  documentLabel?: string;
 }
 
 export function CoverLetterValidationPanel({
+  documentLabel = "Cover Letter",
   groups,
   totalMissingCount,
   isOpen,
@@ -111,7 +114,9 @@ export function CoverLetterValidationPanel({
           <div className="px-4 py-2 bg-amber-50/60 border-b border-amber-100/60 flex items-center gap-2">
             <span className="text-xs">💡</span>
             <p className="text-[11px] text-amber-900 leading-tight">
-              Click any detail below to prompt the AI Assistant to fill it directly.
+              {documentLabel === "Cover Letter"
+                ? "Click any detail below to prompt the AI Assistant to fill it directly."
+                : "These details are not in the CRM and are left out of the text. Click one to add it and it will be written into the document."}
             </p>
           </div>
 
@@ -124,7 +129,7 @@ export function CoverLetterValidationPanel({
                 </div>
                 <p className="text-xs font-bold text-slate-800">All Details Verified!</p>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Every required field is cleanly populated in this Cover Letter.
+                  Every required field is cleanly populated in this {documentLabel}.
                 </p>
               </div>
             ) : (

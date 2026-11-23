@@ -22,6 +22,7 @@ const SopDraftSchema = new Schema<SopDraftRecord>(
     },
     studentId: { type: String, sparse: true, index: true },
     createdBy: { type: String, sparse: true, index: true },
+    programId: { type: String, sparse: true, index: true },
     studentName: { type: String, required: true },
     course: { type: String },
     university: { type: String },

@@ -25,6 +25,7 @@ import { useSopPdfGenerator } from "../hooks/useSopPdfGenerator";
 import { AppHeader } from "@/components/common/AppHeader";
 import { SopDraftsModal } from "./SopDraftsModal";
 import { getAllDrafts, saveDraft } from "../lib/sopDraftStorage";
+import { findDraftForProgram, formatProgramLabel, resolveSelectedProgram } from "../lib/programSelection";
 import { calculateDocumentWordCount } from "../lib/wordCount";
 import { useGlobalStudent } from "@/lib/context/GlobalStudentContext";
 import { useDocumentState } from "@/features/document-generator/hooks/useDocumentState";
@@ -203,12 +204,13 @@ export function SopWorkspace({ initialDraft }: SopWorkspaceProps = {}) {
   );
 
   const targetProgram: NormalizedAppliedProgram | null = useMemo(() => {
-    if (normalizedStudent && selectedProgramId) {
-      const match = normalizedStudent.applications.all.find((p) => p.id === selectedProgramId);
-      if (match) return match;
-    }
-    if (normalizedStudent?.applications?.activeProgram?.course) {
-      return normalizedStudent.applications.activeProgram;
+    if (normalizedStudent) {
+      const resolved = resolveSelectedProgram(
+        normalizedStudent.applications.all,
+        selectedProgramId,
+        normalizedStudent.applications.activeProgram
+      );
+      if (resolved?.course) return resolved;
     }
     if (applicationTarget.intendedCourse || applicationTarget.universityName) {
       return {
@@ -625,7 +627,13 @@ export function SopWorkspace({ initialDraft }: SopWorkspaceProps = {}) {
         if (resumeData.personal?.nationality?.trim()) {
           sopCtx.student.nationality = resumeData.personal.nationality.trim();
         }
-        if (resumeData.education && resumeData.education.length > 0) {
+        // CRM qualifications are matched to the program level (12th for Bachelor's, bachelor's
+        // for Master's) in mapNormalizedToSop; the resume's top entry must not override that.
+        if (
+          normalized.academics.qualifications.length === 0 &&
+          resumeData.education &&
+          resumeData.education.length > 0
+        ) {
           const topEdu = resumeData.education[0];
           if (topEdu.qualification?.trim()) {
             sopCtx.academics.latestQualification = topEdu.qualification.trim();
@@ -766,15 +774,56 @@ export function SopWorkspace({ initialDraft }: SopWorkspaceProps = {}) {
   }, [applicationTarget]);
 
   function handleProgramChange(programId: string) {
-    if (!currentSnapshot) return;
+    if (!currentSnapshot || programId === selectedProgramId) return;
+
+    const previousProgram = availablePrograms.find((p) => p.id === selectedProgramId);
+    const nextProgram = availablePrograms.find((p) => p.id === programId);
+    const hadWork = hasEdits;
+
     setSelectedProgramId(programId);
 
+    // Rebuilds destination (university, course, level) AND the education facts: the 12th
+    // record for a Bachelor's program, the bachelor's record for a Master's program.
     const updatedNormalized = mapCrmToNormalizedStudent(currentSnapshot, {
       source: currentSource === "live-crm" ? "senior-crm-api" : "cached-snapshot",
       activeProgramId: programId,
     });
     const updatedCtx = mapNormalizedToSop(updatedNormalized);
     setCtx(updatedCtx);
+
+    // Drafts are scoped per student + program: never keep writing into another program's draft.
+    const studentKey = selectedStudentId || undefined;
+    const existingDraft = findDraftForProgram(
+      getAllDrafts(),
+      studentKey,
+      programId,
+      activeDocumentType
+    );
+
+    if (existingDraft && !hadWork) {
+      // Nothing to lose: open the SOP previously saved for this program.
+      handleRestoreDraft(existingDraft);
+      setSelectedProgramId(programId);
+      return;
+    }
+
+    setActiveDraftId(null);
+    setDocApproved(false);
+
+    const nextLabel = nextProgram ? formatProgramLabel(nextProgram) : "the selected program";
+    if (hadWork) {
+      // Section text written earlier still describes the previous program.
+      setAiBannerNotice({
+        type: "info",
+        message: existingDraft
+          ? `Switched to ${nextLabel}. The text below was written for ${
+              previousProgram ? formatProgramLabel(previousProgram) : "the previous program"
+            }; a saved draft for this program exists in Drafts. Use Generate All to rewrite this text for the new program.`
+          : `Switched to ${nextLabel}. The text below was written for ${
+              previousProgram ? formatProgramLabel(previousProgram) : "the previous program"
+            } — use Generate All to rewrite it for the new program. Saving will create a separate draft.`,
+      });
+    }
   }
 
   function handleClearStudent() {
@@ -1177,6 +1226,8 @@ export function SopWorkspace({ initialDraft }: SopWorkspaceProps = {}) {
 
       const payload = {
         id: activeDraftId || undefined,
+        studentId: selectedStudentId || undefined,
+        programId: selectedProgramId || undefined,
         studentName: displayName,
         course: targetCourse,
         university: targetUni,
@@ -1249,6 +1300,7 @@ export function SopWorkspace({ initialDraft }: SopWorkspaceProps = {}) {
     }));
     setDocApproved(draft.docApproved);
     setActiveDraftId(draft.id);
+    if (draft.programId) setSelectedProgramId(draft.programId);
     setUseSampleData(true);
     setSavedNoticeText(`Restored draft for ${draft.studentName}`);
     setTimeout(() => setSavedNoticeText(null), 3500);

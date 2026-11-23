@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
     const loadedStudentName = body.loadedStudentName as string | undefined;
     const course = body.course as string | undefined;
     const university = body.university as string | undefined;
+    const programId =
+      typeof body.programId === "string" && body.programId.trim() ? body.programId.trim() : undefined;
 
     const savedAt = new Date().toISOString();
 
@@ -81,6 +83,7 @@ export async function POST(req: NextRequest) {
     const payload = {
       id: draftId,
       ...(targetStudentId ? { studentId: String(targetStudentId) } : {}),
+      ...(programId ? { programId } : {}),
       documentType,
       studentName,
       course,

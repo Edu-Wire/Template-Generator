@@ -1,6 +1,7 @@
 "use client";
 
 import type { CrmSnapshot } from "@/types/crmSnapshot";
+import { resolveRefName } from "@/services/normalization/mapCrmToNormalizedStudent";
 
 interface ResumeStudentDetailsModalProps {
   snapshot: CrmSnapshot | null;
@@ -275,8 +276,8 @@ export function ResumeStudentDetailsModal({
                 <div className="space-y-2">
                   {programs.map((p, i) => (
                     <div key={p._id ?? i} className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs">
-                      <p className="font-semibold text-slate-800">{p.course?.title}</p>
-                      <p className="text-slate-500 text-[11px]">{p.university?.name} — {p.country?.name}</p>
+                      <p className="font-semibold text-slate-800">{resolveRefName(p.course, p.courseTitle, p.courseName)}</p>
+                      <p className="text-slate-500 text-[11px]">{resolveRefName(p.university, p.universityName)} — {resolveRefName(p.country, p.countryName)}</p>
                     </div>
                   ))}
                 </div>

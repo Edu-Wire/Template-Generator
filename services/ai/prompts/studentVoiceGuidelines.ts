@@ -12,6 +12,7 @@
 
 import type { StudentDocumentContext, SopDocumentType } from "@/features/sop-generator/types/sop-generator";
 import type { SafeEvidencePacket } from "@/services/academicAlignment/types";
+import { classifyTargetLevel } from "@/services/normalization/selectRelevantQualification";
 
 // ---------------------------------------------------------------------------
 // Core Reusable Guidelines
@@ -135,26 +136,34 @@ export function detectEducationLevel(ctx: StudentDocumentContext): {
   const targetDegree = (ctx.destination.degreeLevel || "").toLowerCase();
   const prevDegree = (ctx.academics.previousDegree || "").toLowerCase();
 
+  // The program being applied to decides the level; qualification text is only a fallback.
+  const targetLevel = classifyTargetLevel(ctx.destination.degreeLevel);
+
   const isBachelorsApplicant =
-    targetDegree.includes("bachelor") ||
-    targetDegree.includes("undergraduate") ||
-    latestQual.includes("12") ||
-    latestQual.includes("secondary") ||
-    latestQual.includes("intermediate") ||
-    latestQual.includes("high school") ||
-    latestQual.includes("cbse") ||
-    latestQual.includes("icse");
+    targetLevel === "BACHELORS" ||
+    (targetLevel === "UNKNOWN" &&
+      (targetDegree.includes("bachelor") ||
+        targetDegree.includes("undergraduate") ||
+        latestQual.includes("12") ||
+        latestQual.includes("secondary") ||
+        latestQual.includes("intermediate") ||
+        latestQual.includes("high school") ||
+        latestQual.includes("cbse") ||
+        latestQual.includes("icse")));
 
   const isMastersApplicant =
-    targetDegree.includes("master") ||
-    targetDegree.includes("postgraduate") ||
-    targetDegree.includes("msc") ||
-    targetDegree.includes("mba") ||
-    latestQual.includes("bachelor") ||
-    latestQual.includes("b.tech") ||
-    latestQual.includes("b.e.") ||
-    latestQual.includes("b.sc") ||
-    prevDegree.length > 0;
+    targetLevel === "MASTERS" ||
+    targetLevel === "DOCTORATE" ||
+    (targetLevel === "UNKNOWN" &&
+      (targetDegree.includes("master") ||
+        targetDegree.includes("postgraduate") ||
+        targetDegree.includes("msc") ||
+        targetDegree.includes("mba") ||
+        latestQual.includes("bachelor") ||
+        latestQual.includes("b.tech") ||
+        latestQual.includes("b.e.") ||
+        latestQual.includes("b.sc") ||
+        prevDegree.length > 0));
 
   if (isBachelorsApplicant && !isMastersApplicant) {
     return {

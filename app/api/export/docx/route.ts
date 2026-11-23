@@ -258,32 +258,45 @@ export async function POST(req: NextRequest) {
           })
         );
 
-        for (const section of sections) {
-          if (
-            section.title &&
-            section.title.toLowerCase() !== "statement of purpose" &&
-            !section.title.toLowerCase().includes("metadata")
-          ) {
-            docChildren.push(
-              new Paragraph({
-                text: section.title,
-                heading: HeadingLevel.HEADING_2,
-                spacing: { before: 160, after: 80 },
-              })
-            );
-          }
+        // Approved SOP layout: salutation, plain justified paragraphs (no section headings),
+        // then "Yours sincerely," + bold name — same as the editor and PDF.
+        docChildren.push(
+          new Paragraph({
+            alignment: AlignmentType.LEFT,
+            spacing: { after: 140 },
+            children: [new TextRun({ text: "Dear Admissions Committee,", font: defaultFont, size: 22 })],
+          })
+        );
 
+        for (const section of sections) {
           const paragraphs = (section.content || "").split(/\n+/).filter(Boolean);
           for (const p of paragraphs) {
             docChildren.push(
               new Paragraph({
                 alignment: AlignmentType.JUSTIFIED,
                 spacing: { after: 140, line: 260 },
-                children: markdownToRuns(p, defaultFont, 21),
+                children: markdownToRuns(p, defaultFont, 22),
               })
             );
           }
         }
+
+        const signerName = (studentName || "").trim();
+        docChildren.push(
+          new Paragraph({
+            alignment: AlignmentType.LEFT,
+            spacing: { before: 120 },
+            children: [
+              new TextRun({ text: "Yours sincerely,", font: defaultFont, size: 22 }),
+              ...(signerName
+                ? [
+                    new TextRun({ break: 1 }),
+                    new TextRun({ text: signerName, bold: true, font: defaultFont, size: 22 }),
+                  ]
+                : []),
+            ],
+          })
+        );
       } else {
         // Generic / LOR Document
         docChildren.push(

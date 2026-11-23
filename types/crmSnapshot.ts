@@ -125,20 +125,30 @@ export interface CrmDocument {
   required?: boolean;
 }
 
+/** A CRM reference that is normally `{ _id, name }` but some records send plain text instead. */
+export type CrmNamedRef<K extends string> = ({ _id?: string } & { [P in K]?: string } & {
+  name?: string;
+  title?: string;
+  /** The live CRM sends universities as `{ _id, institutionName }`. */
+  institutionName?: string;
+}) | string;
+
 export interface CrmAppliedProgram {
   _id?: string;
-  course?: {
-    _id?: string;
-    title?: string;
-  };
-  university?: {
-    _id?: string;
-    name?: string;
-  };
-  country?: {
-    _id?: string;
-    name?: string;
-  };
+  course?: CrmNamedRef<"title">;
+  university?: CrmNamedRef<"name">;
+  country?: CrmNamedRef<"name">;
+  /** Flat alternatives some CRM versions send next to (or instead of) the nested objects. */
+  courseTitle?: string;
+  courseName?: string;
+  universityName?: string;
+  institutionName?: string;
+  countryName?: string;
+  /** Explicit degree level from the CRM: "PG" (Master's), "UG" (Bachelor's), … */
+  level?: string;
+  durationYear?: number | string | null;
+  durationMonth?: number | string | null;
+  intakes?: string[];
   referenceNo?: string;
   createdAt?: string;
 }

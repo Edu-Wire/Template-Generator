@@ -12,3 +12,7 @@ export type { ResumeProjectionResult } from "./mapNormalizedToResume";
 
 export { mapNormalizedToSop } from "./mapNormalizedToSop";
 export { synthesizeEuropassAboutMe } from "./synthesizeEuropassAboutMe";
+export {
+  selectRelevantQualification,
+  classifyTargetLevel,
+} from "./selectRelevantQualification";

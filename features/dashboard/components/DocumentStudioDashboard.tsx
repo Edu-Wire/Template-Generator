@@ -32,6 +32,15 @@ import {
 } from "@/templates/europass/sections/PendingSectionForm";
 import { mapCrmToNormalizedStudent, mapNormalizedToResume, mapNormalizedToSop } from "@/services/normalization";
 import type { StudentDocumentContext } from "@/features/sop-generator/types/sop-generator";
+import type { NormalizedAppliedProgram } from "@/types/normalizedStudent";
+import { formatProgramLabel } from "@/features/sop-generator/lib/programSelection";
+import {
+  getSopMissingCount,
+  getSopMissingGroups,
+  normalizeSopFieldValue,
+  renderSopSections,
+  updateSopSectionsWithFields,
+} from "@/features/dashboard/utils/sopMissingFields";
 import {
   getMissingValidationGroups,
   getTotalMissingCount,
@@ -52,7 +61,7 @@ import {
   SAMPLE_STUDENTS,
 } from "@/lib/sampleStudents";
 import type { DocumentData } from "@/types";
-import { syncSectionsToCvData, syncCvDataToSections, headingToSectionId, normalizeInternshipPaste } from "../utils/documentStudioSync";
+import { syncSectionsToCvData, syncCvDataToSections, headingToSectionId, normalizeInternshipPaste, normalizeCvSections } from "../utils/documentStudioSync";
 import { mergeImportedIntoCv } from "@/features/document-generator/utils/mergeImportedCv";
 import type { ImportOverrides } from "@/features/document-generator/types/import";
 import { parseDateRange } from "@/features/document-generator/utils/dateRange";
@@ -944,6 +953,11 @@ export function DocumentStudioDashboard() {
   const [activeDocument, setActiveDocument] = useState<HydratedDocumentData | null>(null);
   const [editableDocContent, setEditableDocContent] = useState<HydratedDocumentData | null>(null);
   const [cvDocumentData, setCvDocumentData] = useState<DocumentData | null>(null);
+  const cvDataRef = useRef<DocumentData | null>(null);
+  useEffect(() => {
+    cvDataRef.current = cvDocumentData;
+  }, [cvDocumentData]);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [pendingClarificationTask, setPendingClarificationTask] = useState<PendingClarificationTask | null>(null);
   const [lastActiveTargetSection, setLastActiveTargetSection] = useState<string | null>(null);
@@ -1189,6 +1203,20 @@ export function DocumentStudioDashboard() {
     if (!sopContextStudentId) setActiveSopContext(null);
   }
 
+  // Applied program the open SOP / cover letter is written for (undefined = CRM active program)
+  const docProgramId = editableDocContent?.programId;
+
+  // Programs the student applied to, for the SOP program dropdown
+  const sopPrograms = useMemo(() => {
+    if (!currentDocSnapshot) return { all: [] as NormalizedAppliedProgram[], activeId: "" };
+    try {
+      const n = mapCrmToNormalizedStudent(currentDocSnapshot);
+      return { all: n.applications.all, activeId: n.applications.activeProgramId || "" };
+    } catch {
+      return { all: [] as NormalizedAppliedProgram[], activeId: "" };
+    }
+  }, [currentDocSnapshot]);
+
   // Synchronize student context for Cover Letter validation
   useEffect(() => {
     if (!editableDocContent?.studentId) return;
@@ -1198,7 +1226,10 @@ export function DocumentStudioDashboard() {
       if (snapshot) {
         setCurrentDocSnapshot(snapshot);
         try {
-          const normalized = mapCrmToNormalizedStudent(snapshot);
+          const normalized = mapCrmToNormalizedStudent(
+            snapshot,
+            docProgramId ? { activeProgramId: docProgramId } : undefined
+          );
           const sop = mapNormalizedToSop(normalized);
           setActiveSopContext(sop);
 
@@ -1229,15 +1260,22 @@ export function DocumentStudioDashboard() {
     return () => {
       isMounted = false;
     };
-  }, [editableDocContent?.studentId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editableDocContent?.studentId, docProgramId]);
 
   // Dynamic missing field groups & total count for Cover Letter validation panel
   const missingGroups = useMemo(() => {
+    if (editableDocContent?.docType === "SOP") {
+      return getSopMissingGroups(activeSopContext, editableDocContent?.fieldValues);
+    }
     if (editableDocContent?.docType !== "COVER_LETTER") return [];
     return getMissingValidationGroups(activeSopContext, editableDocContent?.fieldValues);
   }, [activeSopContext, editableDocContent?.docType, editableDocContent?.fieldValues]);
 
   const totalMissingCount = useMemo(() => {
+    if (editableDocContent?.docType === "SOP") {
+      return getSopMissingCount(activeSopContext, editableDocContent?.fieldValues);
+    }
     if (editableDocContent?.docType !== "COVER_LETTER") return 0;
     return getTotalMissingCount(activeSopContext, editableDocContent?.fieldValues);
   }, [activeSopContext, editableDocContent?.docType, editableDocContent?.fieldValues]);
@@ -1300,8 +1338,14 @@ export function DocumentStudioDashboard() {
 
   // Continuous persistence: Syncs any document creation or midway edits to recentDocs & localStorage
   const syncDocumentToRecent = useCallback((doc: HydratedDocumentData, status: string = "Edited just now") => {
+    // CV: persist the full structured state with the sections (the fallback that makes reopening exact).
+    const liveCv = cvDataRef.current;
+    const docToSave: HydratedDocumentData =
+      doc.docType === "CV" && liveCv && activeDocIdentityRef.current?.docId === doc.id
+        ? { ...doc, cvData: liveCv }
+        : doc;
     setRecentDocs((prev) => {
-      const next = syncDocumentToRecentList(prev, doc, status);
+      const next = syncDocumentToRecentList(prev, docToSave, status);
       try {
         localStorage.setItem(RECENT_DOCS_STORAGE_KEY, JSON.stringify(next));
       } catch { }
@@ -1810,7 +1854,16 @@ export function DocumentStudioDashboard() {
       syncDocumentToRecent(editableDocContent, "Edited just now");
     }, 800);
     return () => clearTimeout(timer);
-  }, [editableDocContent, activeDocument, syncDocumentToRecent]);
+  }, [editableDocContent, cvDocumentData, activeDocument, syncDocumentToRecent]);
+
+  // Explicit Save: flush the open document (sections + full CV state) to local storage right now.
+  const handleManualSave = useCallback(() => {
+    if (!editableDocContent) return;
+    syncDocumentToRecent(editableDocContent, "Saved just now");
+    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    setLastSavedAt(time);
+    setAiToast({ message: `✓ Saved at ${time}`, type: "success" });
+  }, [editableDocContent, syncDocumentToRecent]);
 
   // Window beforeunload listener: guarantees midway edits are saved if user leaves midway or reloads
   useEffect(() => {
@@ -1821,6 +1874,7 @@ export function DocumentStudioDashboard() {
           const list: HydratedDocumentData[] = stored ? JSON.parse(stored) : INITIAL_RECENT_DOCS;
           const updatedDoc: HydratedDocumentData = {
             ...editableDocContent,
+            ...(editableDocContent.docType === "CV" && cvDataRef.current ? { cvData: cvDataRef.current } : {}),
             updatedAt: "Edited just now",
           };
           const updatedList = syncDocumentToRecentList(list, updatedDoc, "Edited just now");
@@ -2594,7 +2648,10 @@ export function DocumentStudioDashboard() {
 
         const sectionsWithNew = alreadyInSections
           ? editableDocContent.sections
-          : [...editableDocContent.sections, { heading: promptDef.heading, content: "" }];
+          : normalizeCvSections(
+              [...editableDocContent.sections, { heading: promptDef.heading, content: "" }],
+              baseCv.declaration
+            );
         const cvWithNew = syncSectionsToCvData(sectionsWithNew, baseCv);
         cvWithNew.pendingSections = [
           ...(cvWithNew.pendingSections ?? []).filter((id) => id !== newSectionId),
@@ -3489,6 +3546,8 @@ export function DocumentStudioDashboard() {
       const baseCv = isSameStudent
         ? cvDocumentData!
         : getEuropassData(updated.studentId, updated.studentName, selectedStudentData);
+      // Assistant edits insert at fixed positions / append; keep sections unique and the declaration last.
+      updated.sections = normalizeCvSections(updated.sections, baseCv.declaration);
       const syncedCv = syncSectionsToCvData(updated.sections, baseCv);
       setCvDocumentData(syncedCv);
     }
@@ -5065,6 +5124,103 @@ export function DocumentStudioDashboard() {
       return;
     }
 
+    // ── Dedicated SOP Field-Level Updater (values added from the Missing Details panel) ──
+    if (editableDocContent.docType === "SOP" && targetFieldKey && targetValue) {
+      targetValue = normalizeSopFieldValue(targetFieldKey, targetValue);
+      const userMsg: ChatMessage = {
+        id: generateUniqueId("user"),
+        sender: "user",
+        text: trimmedPrompt,
+        timestamp: getFormattedTimestamp(),
+      };
+      setChatMessages((prev) => [...prev, userMsg]);
+      setAiPromptText("");
+
+      setDocHistory((prev) => [...prev, JSON.parse(JSON.stringify(editableDocContent))]);
+      setRedoHistory([]);
+
+      const updatedFieldValues: Record<string, string> = {
+        ...(editableDocContent.fieldValues || {}),
+        [targetFieldKey]: targetValue,
+      };
+
+      // Only sections still in their generated form are rewritten; hand-edited ones are kept.
+      const { sections: updatedSections, keptEditedSections } = updateSopSectionsWithFields(
+        editableDocContent.sections,
+        activeSopContext,
+        editableDocContent.fieldValues,
+        updatedFieldValues
+      );
+
+      const updatedDoc: HydratedDocumentData = {
+        ...editableDocContent,
+        sections: updatedSections,
+        fieldValues: updatedFieldValues,
+        wordCount: updatedSections.reduce(
+          (acc, s) => acc + (s.content ? s.content.trim().split(/\s+/).filter(Boolean).length : 0),
+          0
+        ),
+      };
+
+      setEditableDocContent(updatedDoc);
+      setActiveDocument(updatedDoc);
+      const newHtml = docSectionsToHtml(updatedSections, updatedDoc.docType, updatedDoc.title);
+      setTiptapHtml(newHtml);
+      if (tiptapEditor) {
+        tiptapEditor.commands.setContent(newHtml);
+      }
+      syncDocumentToRecent(updatedDoc, "Edited just now");
+      setActiveFieldPrompt(null);
+
+      const changedSec = updatedSections.find((sec, idx: number) => {
+        const oldSec = editableDocContent.sections[idx];
+        return !oldSec || oldSec.content !== sec.content;
+      });
+      if (changedSec) {
+        highlightChangedSentenceInCanvas(changedSec.heading, targetValue);
+      }
+
+      const keptNote =
+        keptEditedSections.length > 0
+          ? ` Your edits in ${keptEditedSections.join(", ")} were kept, so the new detail was not inserted there.`
+          : "";
+      // Be honest about whether the text actually changed: a detail can be saved but unused
+      // until the details it goes with (e.g. the university for a city) are added too.
+      const remainingFields = getSopMissingGroups(activeSopContext, updatedFieldValues).flatMap(
+        (g) => g.fields
+      );
+      const outcomeText = changedSec
+        ? `✅ Added **${targetFieldLabel}**: **${targetValue}**. The Statement of Purpose has been updated.${keptNote}`
+        : `✅ Saved **${targetFieldLabel}**: **${targetValue}**. It doesn't appear in the text yet — it is used together with other details.${keptNote}`;
+
+      // Keep the conversation going: list what is still missing and ask for the next detail.
+      const nextField = remainingFields[0];
+      const remainingText = nextField
+        ? `\n\n**${remainingFields.length} detail${remainingFields.length === 1 ? "" : "s"} still missing:**\n${remainingFields
+            .map((f) => `• ${f.label}`)
+            .join("\n")}\n\n${nextField.question}`
+        : `\n\n🎉 **All details are complete.** Nothing is missing from the Statement of Purpose.`;
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: generateUniqueId("assistant-field-update"),
+          sender: "assistant",
+          text: outcomeText + remainingText,
+          timestamp: getFormattedTimestamp(),
+          actionType: "typed_section",
+        },
+      ]);
+      // The next answer typed goes straight to the next missing detail.
+      setActiveFieldPrompt(nextField ?? null);
+      if (nextField) {
+        setTimeout(() => chatInputRef.current?.focus(), 100);
+      }
+      setAiToast({ message: `✨ Updated ${targetFieldLabel}`, type: "success" });
+      setTimeout(() => setAiToast(null), 3000);
+      return;
+    }
+
     // ── Dedicated CV Contact/Personal Field-Level Instant Updater ───────────────
     if (editableDocContent.docType === "CV" && targetFieldKey && targetValue) {
       const userMsg: ChatMessage = {
@@ -5200,7 +5356,8 @@ export function DocumentStudioDashboard() {
         ? "university-sop-standard"
         : newType === "COVER_LETTER"
           ? "italy-type-d-student-visa-cover-letter"
-          : undefined
+          : undefined,
+      activeDocument.programId
     );
     if (editableDocContent) {
       setDocHistory((prev) => [...prev, editableDocContent]);
@@ -5226,6 +5383,93 @@ export function DocumentStudioDashboard() {
 
     setIsAiCooking(false);
     setAiToast({ message: `Switched template to ${newDoc.docTypeName}`, type: "success" });
+  };
+
+  // Rewrites the open SOP / cover letter for another applied program: university, course,
+  // degree level and the matching education record (12th for Bachelor's, bachelor's for
+  // Master's) all follow the chosen program.
+  const handleSwitchProgram = async (programId: string) => {
+    if (!editableDocContent || !programId) return;
+    const docType = editableDocContent.docType;
+    if (docType !== "SOP" && docType !== "COVER_LETTER") return;
+    const currentProgramId = editableDocContent.programId || sopPrograms.activeId;
+    if (programId === currentProgramId) return;
+
+    const snapshot = currentDocSnapshot ?? (await loadStudentSnapshot(editableDocContent.studentId));
+    if (!snapshot) {
+      setAiToast({ message: "Could not load this student's CRM data. Program was not changed.", type: "error" });
+      return;
+    }
+
+    const templateId =
+      docType === "SOP" ? "university-sop-standard" : "italy-type-d-student-visa-cover-letter";
+
+    // Text that differs from a fresh render for the current program has been edited by hand/AI.
+    const baseline = hydrateDocumentFromSnapshot(
+      docType,
+      snapshot,
+      editableDocContent.studentId,
+      templateId,
+      currentProgramId || undefined
+    );
+    const programCtx = (id?: string) =>
+      mapNormalizedToSop(
+        mapCrmToNormalizedStudent(snapshot, id ? { activeProgramId: id } : undefined)
+      );
+    // SOP text also depends on details supplied in the Missing Details panel.
+    const baselineSections =
+      docType === "SOP"
+        ? renderSopSections(programCtx(currentProgramId || undefined), editableDocContent.fieldValues)
+        : baseline.sections;
+    const isEdited = JSON.stringify(baselineSections) !== JSON.stringify(editableDocContent.sections);
+    const nextProgram = sopPrograms.all.find((p) => p.id === programId);
+    if (
+      isEdited &&
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Rewrite this ${docType === "SOP" ? "SOP" : "letter"} for ${
+          nextProgram ? formatProgramLabel(nextProgram) : "the selected program"
+        }?\n\nYour edits to the current text will be replaced (you can undo).`
+      )
+    ) {
+      return;
+    }
+
+    const hydratedForProgram = hydrateDocumentFromSnapshot(
+      docType,
+      snapshot,
+      editableDocContent.studentId,
+      templateId,
+      programId
+    );
+    // Details about the student (not the old program's qualification/university) carry over.
+    const carriedValues = Object.fromEntries(
+      Object.entries(editableDocContent.fieldValues || {}).filter(([k]) => k.startsWith("student."))
+    );
+    const carriedSections =
+      docType === "SOP" && Object.keys(carriedValues).length > 0
+        ? renderSopSections(programCtx(programId), carriedValues)
+        : hydratedForProgram.sections;
+    const newDoc = {
+      ...hydratedForProgram,
+      sections: carriedSections,
+      ...(docType === "SOP" && Object.keys(carriedValues).length > 0 ? { fieldValues: carriedValues } : {}),
+      id: editableDocContent.id,
+      updatedAt: "Edited just now",
+    };
+    setDocHistory((prev) => [...prev, editableDocContent]);
+    setActiveDocument(newDoc);
+    setEditableDocContent(newDoc);
+    const html = docSectionsToHtml(newDoc.sections, newDoc.docType, newDoc.title);
+    setTiptapHtml(html);
+    if (tiptapEditor) {
+      tiptapEditor.commands.setContent(html);
+    }
+    syncDocumentToRecent(newDoc, "Edited just now");
+    setAiToast({
+      message: `Rewritten for ${nextProgram ? formatProgramLabel(nextProgram) : "the selected program"}`,
+      type: "success",
+    });
   };
 
   // Dynamic Document Export Handlers (PDF & Microsoft Word .docx)
@@ -5305,87 +5549,94 @@ export function DocumentStudioDashboard() {
       : { message: `Exported ${fileName}, but ${outcome.message}`, type: "error" };
   };
 
+  // Builds the PDF for the open document. `download` controls whether the browser also
+  // saves it to disk (Export menu) or not (Save to CRM, which sends it to the generator).
+  const buildCurrentPdf = async (
+    download: boolean
+  ): Promise<{ pdfBase64: string; fileName: string } | null> => {
+    if (!editableDocContent) return null;
+    const fileName = buildStandardizedPdfFilename(
+      editableDocContent.studentName,
+      editableDocContent.docType,
+      editableDocContent.targetCountry
+    );
+
+    if (editableDocContent.docType === "CV") {
+      if (cvViewMode !== "europass") {
+        setCvViewMode("europass");
+        for (let i = 0; i < 5; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+          if (document.querySelector('[data-pdf-page="true"]')) break;
+        }
+      }
+
+      const activeCv =
+        cvDocumentData ||
+        getEuropassData(
+          editableDocContent.studentId,
+          editableDocContent.studentName,
+          selectedStudentData
+        );
+
+      const { generateDocumentPdf } = await import(
+        "@/features/document-generator/pdf/generateDocumentPdf"
+      );
+
+      const generated = await generateDocumentPdf(activeCv, {
+        country: editableDocContent.targetCountry || undefined,
+        documentType: "CV",
+        customFilename: fileName,
+        download,
+      });
+      return { pdfBase64: generated.pdfBase64, fileName: generated.filename };
+    }
+
+    const response = await fetch("/api/export/pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: editableDocContent.title,
+        studentName: editableDocContent.studentName,
+        studentId: editableDocContent.studentId,
+        documentType: editableDocContent.docType,
+        sections: editableDocContent.sections.map((s) => ({
+          title: s.heading || "",
+          content: s.content || "",
+        })),
+      }),
+    });
+    if (!response.ok) throw new Error("Failed to generate PDF document");
+
+    const blob = await response.blob();
+    if (download) {
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    }
+    const pdfBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    return { pdfBase64, fileName };
+  };
+
   const handleExportPdf = async () => {
     if (!editableDocContent) return;
     setIsExportingPdf(true);
     setShowExportMenu(false);
 
     try {
-      const fileName = buildStandardizedPdfFilename(
-        editableDocContent.studentName,
-        editableDocContent.docType,
-        editableDocContent.targetCountry
-      );
-
-      if (editableDocContent.docType === "CV") {
-        if (cvViewMode !== "europass") {
-          setCvViewMode("europass");
-          for (let i = 0; i < 5; i++) {
-            await new Promise((r) => setTimeout(r, 100));
-            if (document.querySelector('[data-pdf-page="true"]')) break;
-          }
-        }
-
-        const activeCv =
-          cvDocumentData ||
-          getEuropassData(
-            editableDocContent.studentId,
-            editableDocContent.studentName,
-            selectedStudentData
-          );
-
-        const { generateDocumentPdf } = await import(
-          "@/features/document-generator/pdf/generateDocumentPdf"
-        );
-
-        const generated = await generateDocumentPdf(activeCv, {
-          country: editableDocContent.targetCountry || undefined,
-          documentType: "CV",
-          customFilename: fileName,
-        });
-
-        const crmOutcome = await syncExportToCrm(generated.pdfBase64, generated.filename);
-        setAiToast(crmOutcome ?? { message: `📥 Exported ${fileName}`, type: "success" });
-      } else {
-        const response = await fetch("/api/export/pdf", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: editableDocContent.title,
-            studentName: editableDocContent.studentName,
-            studentId: editableDocContent.studentId,
-            documentType: editableDocContent.docType,
-            sections: editableDocContent.sections.map((s) => ({
-              title: s.heading || "",
-              content: s.content || "",
-            })),
-          }),
-        });
-
-        if (!response.ok) throw new Error("Failed to generate PDF document");
-
-        const blob = await response.blob();
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = downloadUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(downloadUrl);
-
-        let crmOutcome: { message: string; type: "success" | "error" } | null = null;
-        if (crmLinkRef.current && crmLinkRef.current.localId === (editableDocContent.id || null)) {
-          const pdfBase64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(String(reader.result || ""));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(blob);
-          });
-          crmOutcome = await syncExportToCrm(pdfBase64, fileName);
-        }
-        setAiToast(crmOutcome ?? { message: `📥 Exported ${fileName}`, type: "success" });
-      }
+      const built = await buildCurrentPdf(true);
+      if (!built) return;
+      const crmOutcome = await syncExportToCrm(built.pdfBase64, built.fileName);
+      setAiToast(crmOutcome ?? { message: `📥 Exported ${built.fileName}`, type: "success" });
     } catch (err) {
       console.error("[handleExportPdf] Export failed:", err);
       setAiToast({ message: "Failed to export PDF document. Please try again.", type: "info" });
@@ -5393,6 +5644,69 @@ export function DocumentStudioDashboard() {
       setIsExportingPdf(false);
     }
   };
+
+  // CRM "Save to CRM" hand-off: the CRM page (parent window) asks this editor to export the
+  // open document and upload it to the generator, so the user never has to export manually.
+  // Replaces itself every render so it always sees the latest editor state.
+  const crmPdfRequestRef = useRef<
+    (requestId: string, documentId: string | undefined, reply: (status: "finalized" | "failed", message: string) => void) => Promise<void>
+  >(async () => {});
+  crmPdfRequestRef.current = async (_requestId, documentId, reply) => {
+    const link = crmLinkRef.current;
+    if (!link || link.localId !== (editableDocContent?.id || null)) {
+      reply("failed", "This editor isn't linked to the CRM document. Close this tab and click Generate again.");
+      return;
+    }
+    if (documentId && documentId !== link.docId) {
+      reply("failed", "This editor belongs to a different document. Close this tab and click Generate again.");
+      return;
+    }
+    if (isExportingPdf) {
+      reply("failed", "An export is already in progress. Wait a moment and try again.");
+      return;
+    }
+    setIsExportingPdf(true);
+    try {
+      const built = await buildCurrentPdf(false);
+      if (!built) {
+        reply("failed", "The document isn't ready yet.");
+        return;
+      }
+      const outcome = await syncFinalizedPdf(link.docId, built.pdfBase64, built.fileName);
+      reply(outcome.status === "finalized" ? "finalized" : "failed", outcome.message);
+    } catch (err) {
+      console.error("[CRM PDF request] failed:", err);
+      reply("failed", "Couldn't create the PDF from the editor. Try Export → PDF, then Save to CRM.");
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  useEffect(() => {
+    const allowed = new Set(
+      (process.env.NEXT_PUBLIC_CRM_ORIGINS || "https://crm.digi-wire.com")
+        .split(",")
+        .map((o) => o.trim())
+        .filter(Boolean)
+    );
+    const isLocalDev = (origin: string) =>
+      process.env.NODE_ENV !== "production" && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window.parent || window.parent === window) return;
+      if (!allowed.has(event.origin) && !isLocalDev(event.origin)) return;
+      const data = event.data as { type?: string; requestId?: unknown; documentId?: unknown } | null;
+      if (!data || data.type !== "CRM_REQUEST_PDF" || typeof data.requestId !== "string") return;
+      const requestId = data.requestId;
+      // Immediate acknowledgement so the CRM can tell "editor is working on it" from "old editor build".
+      window.parent.postMessage({ type: "CRM_PDF_ACK", requestId }, event.origin);
+      const reply = (status: "finalized" | "failed", message: string) =>
+        window.parent.postMessage({ type: "CRM_PDF_RESULT", requestId, status, message }, event.origin);
+      void crmPdfRequestRef.current(requestId, typeof data.documentId === "string" ? data.documentId : undefined, reply);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
 
 
@@ -5492,7 +5806,12 @@ export function DocumentStudioDashboard() {
 
   // Unified Document Opener (Syncs Tiptap HTML, Europass Mode & Student Context)
   const handleOpenDocument = (doc: HydratedDocumentData) => {
-    const safeDoc = ensureDocumentIdentity(doc);
+    let safeDoc = ensureDocumentIdentity(doc);
+    if (safeDoc.docType === "CV" && Array.isArray(safeDoc.sections)) {
+      // Heal copies saved before the declaration/ordering fixes (declaration last, no stacked duplicates).
+      const crmDecl = getEuropassData(safeDoc.studentId, safeDoc.studentName, selectedStudentData).declaration;
+      safeDoc = { ...safeDoc, sections: normalizeCvSections(safeDoc.sections, crmDecl) };
+    }
     if (aiAbortControllerRef.current) {
       aiAbortControllerRef.current.abort();
     }
@@ -5532,8 +5851,13 @@ export function DocumentStudioDashboard() {
     setActiveFieldPrompt(null);
     setActiveCvSectionPrompt(null);
     if (safeDoc.docType === "CV") {
-      const baseCv = getEuropassData(safeDoc.studentId, safeDoc.studentName, selectedStudentData);
-      const syncedCv = syncSectionsToCvData(safeDoc.sections, baseCv);
+      // Prefer the exact saved CV state; rebuild from CRM + sections only for copies that never stored it.
+      const syncedCv = safeDoc.cvData
+        ? JSON.parse(JSON.stringify(safeDoc.cvData))
+        : syncSectionsToCvData(
+            safeDoc.sections,
+            getEuropassData(safeDoc.studentId, safeDoc.studentName, selectedStudentData)
+          );
       setCvDocumentData(syncedCv);
       setCvViewMode("europass");
     } else {
@@ -5804,6 +6128,21 @@ export function DocumentStudioDashboard() {
         const docType = typeMap[String(rec.documentType).toUpperCase()];
         if (!docType) throw new Error(`Unsupported document type "${rec.documentType}".`);
 
+        // Resume the copy the user already edited for this CRM link instead of rebuilding a new one.
+        let existing: HydratedDocumentData | undefined;
+        try {
+          const stored = localStorage.getItem(RECENT_DOCS_STORAGE_KEY);
+          const list: HydratedDocumentData[] = stored ? JSON.parse(stored) : [];
+          existing = Array.isArray(list)
+            ? list.find((d) => d.crmDocId === docId && d.studentId === rec.studentId && d.docType === docType)
+            : undefined;
+        } catch { }
+        if (existing?.id) {
+          crmLinkRef.current = { docId, localId: existing.id };
+          handleOpenDocument(existing);
+          return;
+        }
+
         const snapshot = await loadStudentSnapshot(rec.studentId);
         if (!snapshot) throw new Error("Could not load the student's CRM data.");
 
@@ -5814,6 +6153,7 @@ export function DocumentStudioDashboard() {
           docType === "SOP" ? "university-sop-standard" : undefined
         );
         doc.id = generateDocumentId(rec.studentId, docType);
+        doc.crmDocId = docId;
         doc.updatedAt = "Created just now";
 
         crmLinkRef.current = { docId, localId: doc.id ?? null };
@@ -6874,16 +7214,19 @@ export function DocumentStudioDashboard() {
               </button>
 
               {/* Live CRM Cloud Sync Status Indicator */}
-              <div
-                className="hidden sm:flex items-center gap-1.5 px-2 py-1 text-slate-300 text-xs font-medium rounded-lg shrink-0"
-                title="Real-time local state synchronized with Digi-Wire CRM snapshot"
+              <button
+                type="button"
+                onClick={handleManualSave}
+                className="flex items-center gap-1.5 px-2 py-1 text-slate-200 hover:text-white hover:bg-slate-800 text-xs font-medium rounded-lg shrink-0 cursor-pointer transition"
+                title="Save now (changes are also auto-saved)"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="text-emerald-400">
-                  <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
-                  <polyline points="9 13 11 15 15 11" />
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
                 </svg>
-                <span className="text-[11px] text-slate-300 hidden md:inline">Saved</span>
-              </div>
+                <span className="text-[11px] hidden md:inline">{lastSavedAt ? `Saved ${lastSavedAt}` : "Save"}</span>
+              </button>
             </div>
 
             {/* Right Header Controls */}
@@ -7269,6 +7612,43 @@ export function DocumentStudioDashboard() {
                     </button>
                   </div>
                 )}
+                {editableDocContent?.docType === "SOP" && totalMissingCount > 0 && (
+                  <div className="mb-2 px-2.5 py-2 bg-amber-50/70 border border-amber-200/70 rounded-xl text-xs animate-in fade-in duration-150">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-900 mb-1.5">
+                      <span>⚠️</span>
+                      <span>{totalMissingCount} missing detail{totalMissingCount === 1 ? "" : "s"} — tap one to add it</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {missingGroups
+                        .flatMap((g) => g.fields)
+                        .slice(0, 6)
+                        .map((f) => (
+                          <button
+                            key={f.key}
+                            type="button"
+                            onClick={() => handleSelectMissingField(f)}
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition cursor-pointer ${
+                              activeFieldPrompt?.key === f.key
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-white text-amber-900 border-amber-200 hover:bg-amber-100"
+                            }`}
+                            title={f.question}
+                          >
+                            + {f.label}
+                          </button>
+                        ))}
+                      {totalMissingCount > 6 && (
+                        <button
+                          type="button"
+                          onClick={() => setIsValidationPanelOpen(true)}
+                          className="px-2 py-0.5 rounded-full text-[11px] font-medium text-slate-600 hover:text-indigo-700 underline cursor-pointer"
+                        >
+                          +{totalMissingCount - 6} more
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {activeFieldPrompt && (
                   <div className="mb-2 px-3 py-1.5 bg-indigo-50/80 border border-indigo-100 rounded-xl text-xs animate-in fade-in duration-150 flex items-center justify-between">
                     <div className="flex items-center gap-1.5 font-semibold text-indigo-700 text-[11px] min-w-0">
@@ -7433,6 +7813,38 @@ export function DocumentStudioDashboard() {
                   </div>
 
                   <div className="h-4 w-px bg-slate-200 shrink-0" />
+
+                  {/* Applied program: SOP / cover letter is written for the selected program */}
+                  {(editableDocContent.docType === "SOP" || editableDocContent.docType === "COVER_LETTER") &&
+                    sopPrograms.all.length > 0 && (
+                      <>
+                        {sopPrograms.all.length > 1 ? (
+                          <select
+                            id="studio-program-select"
+                            value={editableDocContent.programId || sopPrograms.activeId}
+                            onChange={(e) => handleSwitchProgram(e.target.value)}
+                            className="h-7.5 max-w-[260px] truncate rounded-full border border-slate-200/90 bg-white px-3 text-xs font-medium text-slate-700 shadow-2xs cursor-pointer focus:outline-none focus:border-indigo-500 shrink-0"
+                            title="Applied program this document is written for"
+                            aria-label="Applied program"
+                          >
+                            {sopPrograms.all.map((prog) => (
+                              <option key={prog.id} value={prog.id}>
+                                {formatProgramLabel(prog)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span
+                            id="studio-program-label"
+                            className="h-7.5 max-w-[260px] truncate flex items-center rounded-full bg-slate-100 px-3 text-xs font-medium text-slate-700 shrink-0"
+                            title={formatProgramLabel(sopPrograms.all[0])}
+                          >
+                            {formatProgramLabel(sopPrograms.all[0])}
+                          </span>
+                        )}
+                        <div className="h-4 w-px bg-slate-200 shrink-0" />
+                      </>
+                    )}
 
                   {/* Smart AI Refine Pill */}
                   <button
@@ -7891,10 +8303,11 @@ export function DocumentStudioDashboard() {
                   </button>
 
                   {/* Missing Details Panel integrated directly into the Floating Toolbar */}
-                  {editableDocContent?.docType === "COVER_LETTER" && (
+                  {(editableDocContent?.docType === "COVER_LETTER" || editableDocContent?.docType === "SOP") && (
                     <>
                       <div className="h-4 w-px bg-slate-200 shrink-0 mx-0.5" />
                       <CoverLetterValidationPanel
+                        documentLabel={editableDocContent?.docType === "SOP" ? "Statement of Purpose" : "Cover Letter"}
                         groups={missingGroups}
                         totalMissingCount={totalMissingCount}
                         isOpen={isValidationPanelOpen}

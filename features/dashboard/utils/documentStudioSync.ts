@@ -74,6 +74,42 @@ export function headingToSectionId(heading: string): string | null {
   return null;
 }
 
+/**
+ * Keeps a CV's flat studio sections well-formed after any edit (assistant, manual or import):
+ *  - drops exact-duplicate headings (same heading, empty or identical content) so sections never stack,
+ *  - keeps the closing DECLARATION as the very last section,
+ *  - restores the DECLARATION from `declarationText` when an edit lost it.
+ * Never mutates the input.
+ */
+export function normalizeCvSections(
+  sections: { heading: string; content: string }[],
+  declarationText?: string
+): { heading: string; content: string }[] {
+  const out: { heading: string; content: string }[] = [];
+  const seen = new Map<string, number>();
+  for (const sec of sections) {
+    const key = (sec.heading || "").trim().toLowerCase();
+    const prevIdx = key ? seen.get(key) : undefined;
+    if (prevIdx !== undefined) {
+      const prev = out[prevIdx];
+      if (!prev.content.trim() && sec.content.trim()) prev.content = sec.content;
+      if (!sec.content.trim() || sec.content.trim() === prev.content.trim()) continue;
+    } else if (key) {
+      seen.set(key, out.length);
+    }
+    out.push({ ...sec });
+  }
+
+  const declIdx = out.findIndex((s) => headingToSectionId(s.heading || "") === "declaration");
+  if (declIdx >= 0) {
+    const [decl] = out.splice(declIdx, 1);
+    out.push(decl);
+  } else if (declarationText?.trim()) {
+    out.push({ heading: "DECLARATION", content: declarationText });
+  }
+  return out;
+}
+
 /** Finds the studio section whose heading maps to the canonical section id. */
 function findSectionById<T extends { heading?: string }>(sections: T[], id: string): T | undefined {
   return sections.find((s) => headingToSectionId(s.heading || "") === id);
@@ -353,12 +389,9 @@ export function syncSectionsToCvData(
     updatedCv.declaration = declSec.content;
   } else if (declSec && !declSec.content.trim()) {
     updatedCv.declaration = "";
-  } else if (!declSec) {
-    updatedCv.declaration = "";
-    if (updatedCv.sectionOrder) {
-      updatedCv.sectionOrder = updatedCv.sectionOrder.filter((id) => id !== "declaration");
-    }
   }
+  // A missing declaration section never wipes the stored declaration: it is the closing
+  // section of every CV and must always remain (it is restored into the studio sections).
 
   // 9. Language Skills & Mother Tongue
   const langSec = findSectionById(sections, "languages");
@@ -568,7 +601,6 @@ export function syncSectionsToCvData(
   if (!certSec) removedSectionIds.add("certifications");
   if (!hobbySec) removedSectionIds.add("hobbies");
   if (!langSec) removedSectionIds.add("languages");
-  if (!declSec) removedSectionIds.add("declaration");
   if (!projSec) removedSectionIds.add("academicProjects");
   if (!achSec) removedSectionIds.add("achievements");
   if (!leaderSec) removedSectionIds.add("leadershipActivities");

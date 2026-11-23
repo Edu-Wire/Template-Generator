@@ -30,6 +30,15 @@ export function getResumeSessionStorageKey(studentId?: string | null): string {
   return `${RESUME_STORAGE_KEY_PREFIX}_data`;
 }
 
+/** Reads the cached working copy: localStorage survives closing the tab; sessionStorage is a legacy fallback. */
+function readCachedResume(key: string): string | null {
+  try {
+    return localStorage.getItem(key) ?? sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Context shape
 // ---------------------------------------------------------------------------
@@ -94,7 +103,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           const urlParams = new URLSearchParams(window.location.search);
           const initialStudentId = urlParams.get("studentId");
           const storageKey = getResumeSessionStorageKey(initialStudentId);
-          const saved = sessionStorage.getItem(storageKey);
+          const saved = readCachedResume(storageKey);
           if (saved) {
             const parsed = JSON.parse(saved);
             if (parsed && typeof parsed === "object") {
@@ -128,7 +137,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (typeof window !== "undefined") {
         try {
           const studentStorageKey = getResumeSessionStorageKey(selectedStudentId);
-          const saved = sessionStorage.getItem(studentStorageKey);
+          const saved = readCachedResume(studentStorageKey);
           if (saved) {
             const parsed = JSON.parse(saved);
             if (parsed && typeof parsed === "object") {
@@ -185,7 +194,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (typeof window !== "undefined") {
         try {
           const anonKey = getResumeSessionStorageKey(null);
-          const saved = sessionStorage.getItem(anonKey);
+          const saved = readCachedResume(anonKey);
           if (saved) {
             const parsed = JSON.parse(saved);
             if (parsed && typeof parsed === "object") {
@@ -242,7 +251,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") {
       try {
         const activeKey = getResumeSessionStorageKey(selectedStudentId);
-        sessionStorage.setItem(activeKey, JSON.stringify(data));
+        localStorage.setItem(activeKey, JSON.stringify(data));
       } catch {
         // ignore storage error
       }

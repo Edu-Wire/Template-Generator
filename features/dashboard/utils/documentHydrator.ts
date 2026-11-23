@@ -17,6 +17,7 @@ import { universitySopTemplate } from "@/features/sop-generator/templates/univer
 import { italyTypeDCoverLetter } from "@/features/sop-generator/templates/italy-type-d-cover-letter";
 import { interpolate } from "@/features/sop-generator/lib/interpolateTemplate";
 import { renderCleanCoverLetterSections } from "./coverLetterCleaner";
+import { renderSopSections } from "./sopMissingFields";
 import {
   mapCrmToNormalizedStudent,
   mapNormalizedToSop,
@@ -33,6 +34,12 @@ export interface HydratedDocumentData {
   docTypeName: string;
   studentName: string;
   studentId: string;
+  /** Applied program this document was written for (SOP / cover letter). */
+  programId?: string;
+  /** CRM generator-record id this document was opened from, so reopening the link resumes this copy. */
+  crmDocId?: string;
+  /** Full structured CV state (CV only) saved alongside the sections so reopening restores it exactly. */
+  cvData?: DocumentData;
   updatedAt: string;
   targetUniversity: string;
   targetCourse: string;
@@ -108,10 +115,12 @@ export function hydrateDocumentFromSnapshot(
   docType: "SOP" | "CV" | "LOR" | "COVER_LETTER",
   snapshot: CrmSnapshot,
   studentId: string,
-  templateId?: string
+  templateId?: string,
+  /** Applied program (CRM application id) to write the document for; defaults to the active one. */
+  programId?: string
 ): HydratedDocumentData {
   // Normalize CRM snapshot using central normalization engine
-  const normalized = mapCrmToNormalizedStudent(snapshot);
+  const normalized = mapCrmToNormalizedStudent(snapshot, programId ? { activeProgramId: programId } : undefined);
   const p = normalized.personal;
   const a = normalized.academics;
   const prog = normalized.applications.activeProgram;
@@ -256,17 +265,22 @@ export function hydrateDocumentFromSnapshot(
 
     const title = isVisa
       ? `${studentName} – Italy Visa Cover Letter`
-      : `${studentName} – Statement of Purpose (${targetUniversity})`;
+      : targetUniversity
+        ? `${studentName} – Statement of Purpose (${targetUniversity})`
+        : `${studentName} – Statement of Purpose`;
 
     const docTypeName = isVisa ? "Italy Type D Visa Cover Letter" : "Statement of Purpose (SOP)";
     const route = `/sop-generator?student=${studentId}&template=${template.id}`;
 
     const sections = isVisa
       ? renderCleanCoverLetterSections(sopContext)
-      : template.sections.map((sec) => ({
-          heading: sec.title,
-          content: interpolate(sec.content, sopContext),
-        }));
+      : // SOP text never contains "[MISSING: …]"; gaps are listed in the Missing Details panel.
+        template.id === universitySopTemplate.id
+        ? renderSopSections(sopContext)
+        : template.sections.map((sec) => ({
+            heading: sec.title,
+            content: interpolate(sec.content, sopContext),
+          }));
 
     const totalWords = sections.reduce(
       (acc, s) => acc + s.content.split(/\s+/).filter(Boolean).length,
@@ -281,6 +295,7 @@ export function hydrateDocumentFromSnapshot(
       docTypeName,
       studentName,
       studentId,
+      programId: prog?.id,
       updatedAt: "Just now",
       targetUniversity: isVisa && sopContext.destination.university ? sopContext.destination.university : targetUniversity,
       targetCourse: isVisa && sopContext.destination.course ? sopContext.destination.course : targetCourse,
