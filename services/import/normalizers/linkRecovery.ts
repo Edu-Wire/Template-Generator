@@ -63,8 +63,7 @@ export function recoverLinks(data: DocumentData, rawText: string, annotationLink
     if (!isBlank(e.website)) used.add(String(e.website).trim().toLowerCase());
   }
   const edu = data.education ?? [];
-  const missing = edu.filter((e) => isBlank(e.website));
-  if (missing.length > 0) {
+  if (edu.length > 0) {
     // Walk the entries in order so two entries of the same school (Grade 12 / Grade 10) each get the next URL.
     let cursor = 0;
     for (const e of edu) {
@@ -75,7 +74,6 @@ export function recoverLinks(data: DocumentData, rawText: string, annotationLink
       const at = lower.indexOf(needle, cursor);
       if (at < 0) continue;
       cursor = at + needle.length;
-      if (!isBlank(e.website)) continue;
       // Stop at the next entry's institution so one entry never takes another's URL.
       let end = Math.min(compact.length, cursor + 700);
       for (const other of edu) {
@@ -86,10 +84,20 @@ export function recoverLinks(data: DocumentData, rawText: string, annotationLink
         if (oi >= 0 && oi < end) end = oi;
       }
       const slice = compact.slice(cursor, end);
+      // Europass prints "Address: <full address> | Website: … | Final grade: …". The AI tends to
+      // shorten the address, so take the printed one when it is more complete.
+      const addr = slice.match(/address\s*:\s*(.+?)(?=\s*\|\s|\s+website\s*:|\s+final\s+grade\s*:|$)/i);
+      if (addr) {
+        const printed = addr[1].trim().replace(/[\s|]+$/, "");
+        const current = String(e.address ?? "").trim();
+        if (printed && printed.toLowerCase() !== current.toLowerCase()) {
+          e.address = printed;
+        }
+      }
       // Prefer an explicit "Website:" label; otherwise any URL in this entry's block.
       const labelled = slice.match(new RegExp(String.raw`website\s*:?\s*(${URL_SOURCE})`, "i"));
       const url = labelled ? cleanExtractedUrl(labelled[1]) : extractUrls(slice)[0];
-      if (url) {
+      if (url && isBlank(e.website)) {
         e.website = url;
         used.add(url.toLowerCase());
       }
@@ -98,8 +106,6 @@ export function recoverLinks(data: DocumentData, rawText: string, annotationLink
 
   // ── Personal links ───────────────────────────────────────────────────────────
   const personal = { ...(data.personal ?? {}) };
-  const header = text.slice(0, 1500);
-  const headerUrls = extractUrls(`${header}\n${annotationLinks.join("\n")}`);
   const pick = (re: RegExp) => allUrls.find((u) => re.test(u));
   if (isBlank(personal.linkedinUrl)) {
     const u = pick(/linkedin\.com/i);
@@ -109,12 +115,21 @@ export function recoverLinks(data: DocumentData, rawText: string, annotationLink
     const u = pick(/github\.com/i);
     if (u) personal.githubUrl = u;
   }
+  const hostOf = (u: string) => u.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0];
+  const schoolHosts = (data.education ?? []).filter((e) => !isBlank(e.website)).map((e) => hostOf(String(e.website)));
+  // Prefix match too: a truncated copy of a school host ("orchidsinternationalschool") is still that school.
+  const isSchoolHost = (u: string) => {
+    const h = hostOf(u);
+    return h.length > 0 && schoolHosts.some((sh) => sh === h || sh.startsWith(h) || h.startsWith(sh));
+  };
+  // A school's website is not the student's portfolio (the AI sometimes picks it up from the CV).
+  if (!isBlank(personal.portfolioUrl) && isSchoolHost(String(personal.portfolioUrl))) {
+    personal.portfolioUrl = "";
+  }
   if (isBlank(personal.portfolioUrl)) {
-    const u = headerUrls.find(
-      (x) =>
-        !/linkedin\.com|github\.com|mailto:/i.test(x) &&
-        !used.has(x.toLowerCase()) &&
-        !(data.education ?? []).some((e) => !isBlank(e.website) && sameUrl(String(e.website), x))
+    // Only a real clickable link counts, and never a school's own site (those belong to Education).
+    const u = annotationLinks.find(
+      (x) => !/linkedin\.com|github\.com|mailto:/i.test(x) && !isSchoolHost(x) && !used.has(x.toLowerCase())
     );
     if (u) personal.portfolioUrl = u;
   }

@@ -181,3 +181,33 @@ describe("mergeImportedIntoCv link fill", () => {
     assert.equal(data.education?.[1].website, "https://keep.me");
   });
 });
+
+describe("mergeImportedIntoCv education detail upgrade", () => {
+  it("takes the fuller printed address and a real degree name over thin stored values", () => {
+    const existing = {
+      personal: {},
+      education: [
+        { id: "a", qualification: "Undergraduate", institution: "The Bhopal School of Social Sciences", address: "India", startDate: "01/08/2023", endDate: "30/04/2026" },
+        { id: "b", qualification: "Grade 12th", institution: "Gyan Ganga International Academy", address: "Bhopal, India", startDate: "2022", endDate: "2023" },
+      ],
+    } as DocumentData;
+    const imported = {
+      personal: {},
+      education: [
+        { id: "x", qualification: "Bachelor of Business Administration", institution: "The Bhopal School of Social Sciences", address: "DRM OFFICE, Hoshangabad Road, Bhopal, Madhya Pradesh 462024", startDate: "01/08/2023", endDate: "30/04/2026" },
+        { id: "y", qualification: "Grade 12th", institution: "Gyan Ganga International Academy", address: "National Highway, 12, Narmadapuram Rd, Ratanpur Sadak, Bhopal, Madhya Pradesh 462047", startDate: "2022", endDate: "2023" },
+      ],
+    } as DocumentData;
+    const { data } = mergeImportedIntoCv(existing, imported);
+    assert.equal(data.education?.length, 2);
+    assert.equal(data.education?.[0].qualification, "Bachelor of Business Administration");
+    assert.match(String(data.education?.[0].address), /DRM OFFICE/);
+    assert.match(String(data.education?.[1].address), /Ratanpur Sadak/);
+  });
+
+  it("keeps a stored address that is already as detailed or unrelated", () => {
+    const existing = { personal: {}, education: [{ id: "a", qualification: "Grade 12th", institution: "Gyan Ganga International Academy", address: "Bhopal, MP", startDate: "2022", endDate: "2023" }] } as DocumentData;
+    const imported = { personal: {}, education: [{ id: "x", qualification: "Grade 12th", institution: "Gyan Ganga International Academy", address: "Indore", startDate: "2022", endDate: "2023" }] } as DocumentData;
+    assert.equal(mergeImportedIntoCv(existing, imported).data.education?.[0].address, "Bhopal, MP");
+  });
+});

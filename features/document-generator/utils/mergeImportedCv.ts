@@ -187,6 +187,31 @@ const FUZZY_MATCH: Partial<Record<ListKey, (a: Entry, b: Entry) => boolean>> = {
 /** Entry fields that hold a URL; an upload may fill them when the stored entry has none. */
 const LINK_FIELDS = ["website", "link", "credentialLink"] as const;
 
+/** A bare level label ("Undergraduate") that says nothing about the actual degree. */
+const GENERIC_QUALIFICATION = /^(under\s?graduate|post\s?graduate|graduate|bachelors?|masters?|diploma|degree)$/i;
+
+/**
+ * For an education entry that the CV already holds, take the more detailed value from the upload:
+ *  - a fuller address ("India" -> "DRM Office, Hoshangabad Road, Bhopal, Madhya Pradesh 462024"),
+ *  - a real qualification name in place of a generic level label.
+ * Anything that is not clearly less specific is left untouched.
+ */
+/** Rough detail level of an address: its number of comma-separated parts. */
+const addressDetail = (a: string) => a.split(",").map((x) => x.trim()).filter(Boolean).length;
+
+function upgradeEducationDetails(stored: Entry, incoming: Entry): void {
+  const sAddr = String(stored.address ?? "").trim();
+  const iAddr = String(incoming.address ?? "").trim();
+  if (iAddr && (!sAddr || addressDetail(iAddr) > addressDetail(sAddr))) {
+    stored.address = iAddr;
+  }
+  const sQual = String(stored.qualification ?? "").trim();
+  const iQual = String(incoming.qualification ?? "").trim();
+  if (iQual && (!sQual || (GENERIC_QUALIFICATION.test(sQual) && !GENERIC_QUALIFICATION.test(iQual)))) {
+    stored.qualification = iQual;
+  }
+}
+
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
 const isBlank = (v: unknown) => v === undefined || v === null || (typeof v === "string" && v.trim() === "");
 
@@ -290,6 +315,7 @@ export function mergeImportedIntoCv(
           for (const field of LINK_FIELDS) {
             if (isBlank(match[field]) && !isBlank(entry[field])) match[field] = entry[field];
           }
+          if (key === "education") upgradeEducationDetails(match, entry);
         }
         continue;
       }
