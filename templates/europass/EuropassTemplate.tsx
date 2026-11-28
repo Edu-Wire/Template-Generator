@@ -688,8 +688,7 @@ export function EuropassTemplate({
               This section is empty. Share the details in the AI chat to fill it in, or{" "}
                   <button
                     type="button"
-                    onClick={() => requestSectionEditor({ sectionId: pendingId, mode: "edit" })}
-                    style={{
+                    onClick={() => requestSectionEditor({ sectionId: pendingId, mode: "edit" })}                    style={{
                       font: "inherit",
                       fontStyle: "normal",
                       fontWeight: 600,
@@ -1601,6 +1600,7 @@ export function EuropassTemplate({
     certificationEntries,
     fontReadyTrigger,
     isInteractive,
+    data.customSections,
   ]);
 
   const currentPages = pageAssignments ?? fallbackPages;
@@ -1847,8 +1847,12 @@ export function EuropassTemplate({
                     style={{ display: "contents" }}
                     onClickCapture={(e) => {
                       const target = e.target as HTMLElement;
-                      const editorId = canonicalKey.replace(/^pending_/, "");
-                      if (!(editorId in PENDING_SECTION_TITLES)) return;
+                      const strippedKey = canonicalKey.replace(/^pending_/, "");
+                      const customMatch = (data.customSections ?? []).find(
+                        (c) => c.id === strippedKey || `custom_${c.id}` === strippedKey
+                      );
+                      const editorId = customMatch ? customMatch.id : strippedKey;
+                      if (!customMatch && !(editorId in PENDING_SECTION_TITLES)) return;
                       const isAdd = Boolean(target.closest(`.${styles.addSectionEntryBtn}`));
                       const isEdit = Boolean(target.closest('[data-action="edit-section"]'));
                       if (!isAdd && !isEdit) return;
