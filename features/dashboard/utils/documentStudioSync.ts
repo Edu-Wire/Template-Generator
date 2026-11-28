@@ -56,8 +56,20 @@ export function customSectionId(title: string): string {
 /**
  * Maps a flat studio section heading to its canonical DocumentData sectionId.
  */
+const customTitleRegistry = new Set<string>();
+
+/**
+ * Marks a title as a user-defined custom section so keyword matching below never
+ * maps it to a standard section (e.g. "Volunteer Work" must not become Work Experience).
+ */
+export function registerCustomSectionTitle(title: string): void {
+  const t = title.trim().toLowerCase();
+  if (t) customTitleRegistry.add(t);
+}
+
 export function headingToSectionId(heading: string): string | null {
   const h = heading.toLowerCase();
+  if (customTitleRegistry.has(h.trim())) return null;
   if (h.includes("about me") || h.includes("about")) return "aboutMe";
   if (h.includes("education") || h.includes("training")) return "education";
   if (
@@ -132,6 +144,7 @@ export function syncSectionsToCvData(
   sections: { heading?: string; content: string }[],
   baseCv: DocumentData
 ): DocumentData {
+  for (const c of baseCv.customSections ?? []) registerCustomSectionTitle(c.title);
   const updatedCv: DocumentData = JSON.parse(JSON.stringify(baseCv));
 
   // 1. About Me
@@ -667,6 +680,7 @@ export function syncCvDataToSections(
   cv: DocumentData,
   existingSections: { heading: string; content: string }[]
 ): { heading: string; content: string }[] {
+  for (const c of cv.customSections ?? []) registerCustomSectionTitle(c.title);
   const sections = existingSections.map((s) => ({ ...s }));
 
   // 1. About Me

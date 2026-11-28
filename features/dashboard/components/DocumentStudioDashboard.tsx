@@ -61,7 +61,7 @@ import {
   SAMPLE_STUDENTS,
 } from "@/lib/sampleStudents";
 import type { DocumentData } from "@/types";
-import { syncSectionsToCvData, syncCvDataToSections, headingToSectionId, customSectionId, normalizeInternshipPaste, normalizeCvSections } from "../utils/documentStudioSync";
+import { syncSectionsToCvData, syncCvDataToSections, headingToSectionId, customSectionId, registerCustomSectionTitle, normalizeInternshipPaste, normalizeCvSections } from "../utils/documentStudioSync";
 import { mergeImportedIntoCv } from "@/features/document-generator/utils/mergeImportedCv";
 import type { ImportOverrides } from "@/features/document-generator/types/import";
 import { parseDateRange } from "@/features/document-generator/utils/dateRange";
@@ -952,8 +952,18 @@ export function DocumentStudioDashboard() {
   // In-Front Live Document Presentation State
   const [activeDocument, setActiveDocument] = useState<HydratedDocumentData | null>(null);
   const [editableDocContent, setEditableDocContent] = useState<HydratedDocumentData | null>(null);
-  const [cvDocumentData, setCvDocumentData] = useState<DocumentData | null>(null);
+  const [cvDocumentData, setCvDocumentDataState] = useState<DocumentData | null>(null);
   const cvDataRef = useRef<DocumentData | null>(null);
+  // Update the ref synchronously with every CV change so a save/exit right after an edit
+  // persists the newest CV (the ref used to lag one render behind, saving stale data).
+  const setCvDocumentData = useCallback(
+    (next: DocumentData | null | ((prev: DocumentData | null) => DocumentData | null)) => {
+      const value = typeof next === "function" ? next(cvDataRef.current) : next;
+      cvDataRef.current = value;
+      setCvDocumentDataState(value);
+    },
+    []
+  );
   useEffect(() => {
     cvDataRef.current = cvDocumentData;
   }, [cvDocumentData]);
@@ -980,6 +990,7 @@ export function DocumentStudioDashboard() {
   const infoMenuRef = useRef<HTMLDivElement>(null);
 
   // Production-grade student identity isolation & request race condition guards
+  const lastPersistOkRef = useRef(true);
   const activeDocIdentityRef = useRef<{ docId: string; studentId: string } | null>(null);
   /** Mirror of the document currently in the editor, read when an AI reply arrives. */
   const editableDocRef = useRef<HydratedDocumentData | null>(null);
@@ -1347,9 +1358,42 @@ export function DocumentStudioDashboard() {
         : doc;
     setRecentDocs((prev) => {
       const next = syncDocumentToRecentList(prev, docToSave, status);
-      try {
-        localStorage.setItem(RECENT_DOCS_STORAGE_KEY, JSON.stringify(next));
-      } catch { }
+      // Quota-safe persistence: embedded photos (photoUrl / photoSourceUrl data-URLs) can overflow
+      // localStorage. Degrade gradually and always keep the document being edited intact.
+      const activeId = docToSave.id;
+      const isData = (v?: string) => Boolean(v && v.startsWith("data:"));
+      const stripPhotos = (d: HydratedDocumentData): HydratedDocumentData => {
+        const p = d.cvData?.personal;
+        if (!d.cvData || !p || (!isData(p.photoUrl) && !isData(p.photoSourceUrl))) return d;
+        return {
+          ...d,
+          cvData: {
+            ...d.cvData,
+            personal: {
+              ...p,
+              photoUrl: isData(p.photoUrl) ? undefined : p.photoUrl,
+              photoSourceUrl: isData(p.photoSourceUrl) ? undefined : p.photoSourceUrl,
+            },
+          },
+        };
+      };
+      const attempts: HydratedDocumentData[][] = [
+        next,
+        next.map((d) => (d.id === activeId ? d : stripPhotos(d))),
+        next.map(stripPhotos),
+        next.map((d) => (d.id === activeId ? stripPhotos(d) : { ...stripPhotos(d), cvData: undefined })),
+        next.slice(0, 1).map(stripPhotos),
+      ];
+      lastPersistOkRef.current = false;
+      for (const attempt of attempts) {
+        try {
+          localStorage.setItem(RECENT_DOCS_STORAGE_KEY, JSON.stringify(attempt));
+          lastPersistOkRef.current = true;
+          break;
+        } catch (err) {
+          console.warn("[studio] recent documents save attempt failed", err);
+        }
+      }
       return next;
     });
   }, []);
@@ -1862,8 +1906,16 @@ export function DocumentStudioDashboard() {
     if (!editableDocContent) return;
     syncDocumentToRecent(editableDocContent, "Saved just now");
     const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    setLastSavedAt(time);
-    setAiToast({ message: `✓ Saved at ${time}`, type: "success" });
+    // The state updater that writes to localStorage runs on the next tick; check its outcome then.
+    setTimeout(() => {
+      if (lastPersistOkRef.current) {
+        setLastSavedAt(time);
+        setAiToast({ message: `✓ Saved at ${time}`, type: "success" });
+      } else {
+        setAiToast({ message: "⚠️ Could not save: browser storage is full. Export the PDF or clear old recent documents.", type: "error" });
+      }
+      setTimeout(() => setAiToast(null), 3000);
+    }, 100);
   }, [editableDocContent, syncDocumentToRecent]);
 
   // Window beforeunload listener: guarantees midway edits are saved if user leaves midway or reloads
@@ -8468,6 +8520,9 @@ export function DocumentStudioDashboard() {
                                 const title = customSectionDialog.title.trim();
                                 if (!title) return;
                                 setCustomSectionDialog(null);
+                                // Titles with a standard keyword (e.g. "Volunteer Work") must stay custom,
+                                // otherwise they are parsed as that standard section and content is lost.
+                                registerCustomSectionTitle(title);
                                 handleAddSection(title, "");
                               }}
                             >
