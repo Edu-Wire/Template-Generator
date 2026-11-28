@@ -2549,6 +2549,22 @@ export function DocumentStudioDashboard() {
   const REPLACE_ONLY_SECTIONS = ["aboutMe", "declaration", "englishCertificate", "languages"];
   const LINE_SEPARATED_SECTIONS = ["skills", "hobbies", "academicInterests", "achievements"];
 
+  // Index of the flat studio section for a canonical id, or for a custom section id
+  // (custom sections have no canonical heading mapping, so match by title/id).
+  const findStudioSectionIdx = (sections: { heading?: string }[], sectionId: string) => {
+    const byCanonical = sections.findIndex((s) => headingToSectionId(s.heading || "") === sectionId);
+    if (byCanonical >= 0) return byCanonical;
+    const customTitle = cvDocumentData?.customSections?.find((c) => c.id === sectionId)?.title;
+    return sections.findIndex((s) => {
+      const h = (s.heading || "").trim();
+      if (!h || headingToSectionId(h) !== null) return false;
+      return (
+        customSectionId(h) === sectionId ||
+        (customTitle ? h.toLowerCase() === customTitle.trim().toLowerCase() : false)
+      );
+    });
+  };
+
   const handleSectionEditorSave = (
     sectionId: string,
     mode: "add" | "edit",
@@ -2564,7 +2580,7 @@ export function DocumentStudioDashboard() {
     const newPart = sectionId === "internships" ? normalizeInternshipPaste(rawContent) : rawContent;
 
     const sections = [...editableDocContent.sections];
-    const idx = sections.findIndex((s) => headingToSectionId(s.heading || "") === sectionId);
+    const idx = findStudioSectionIdx(sections, sectionId);
     const existing = idx >= 0 ? (sections[idx].content || "").trim() : "";
     const content =
       mode === "add" && existing && !REPLACE_ONLY_SECTIONS.includes(sectionId)
@@ -2578,7 +2594,11 @@ export function DocumentStudioDashboard() {
     setCvRedoHistory([]);
     setRedoHistory([]);
 
-    const keepsMapping = headingToSectionId(title) === sectionId;
+    const isCustomSection =
+      idx >= 0
+        ? headingToSectionId(sections[idx].heading || "") === null
+        : headingToSectionId(title) === null;
+    const keepsMapping = isCustomSection || headingToSectionId(title) === sectionId;
     const heading = keepsMapping ? title.toUpperCase() : idx >= 0 ? sections[idx].heading || title.toUpperCase() : title.toUpperCase();
     if (idx >= 0) sections[idx] = { ...sections[idx], heading, content };
     else sections.push({ heading, content });
@@ -8581,10 +8601,13 @@ export function DocumentStudioDashboard() {
               {/* ── Paste-style section editor (add to / edit a CV section) ── */}
               {sectionEditor && editableDocContent && editableDocContent.docType === "CV" && (() => {
                 const { sectionId, mode } = sectionEditor;
-                const existingSec = editableDocContent.sections.find(
-                  (s) => headingToSectionId(s.heading || "") === sectionId
-                );
-                const label = CV_SECTION_PROMPTS_BY_ID[sectionId] ?? sectionId;
+                const existingSecIdx = findStudioSectionIdx(editableDocContent.sections, sectionId);
+                const existingSec = existingSecIdx >= 0 ? editableDocContent.sections[existingSecIdx] : undefined;
+                const label =
+                  CV_SECTION_PROMPTS_BY_ID[sectionId] ??
+                  existingSec?.heading ??
+                  cvDocumentData?.customSections?.find((c) => c.id === sectionId)?.title ??
+                  sectionId;
                 const title = existingSec?.heading || label;
                 const initialContent = mode === "edit" ? existingSec?.content || "" : "";
                 const EditorForm = sectionId === "languages" ? LanguageSectionEditorForm : SectionEditorForm;
