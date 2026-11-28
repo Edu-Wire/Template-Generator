@@ -87,6 +87,7 @@ const ORG_STOPWORDS = new Set([
   "the", "of", "and", "at", "in", "for", "int", "intl", "international", "cbse", "icse", "school", "college",
   "university", "institute", "institution", "academy", "technologies", "technology", "tech", "solutions",
   "pvt", "private", "ltd", "limited", "inc", "llp", "corp", "company", "co", "labs", "systems", "services",
+  "govt", "government", "inter", "higher", "secondary", "senior", "sr", "sec", "public",
   "india", "indore", "pune", "mumbai", "delhi", "bangalore", "bengaluru", "mp", "mh",
 ]);
 
@@ -127,8 +128,8 @@ function similarTitle(a: unknown, b: unknown): boolean {
 /** School level implied by a qualification name; null when it says nothing (e.g. "Csit"). */
 function educationLevel(q: unknown): string | null {
   const t = String(q ?? "").toLowerCase();
-  if (/\b(xii|12th|twelfth|hsc|senior secondary|pcb|pcm|plus two|\+2)\b/.test(t)) return "12";
-  if (/\b(x|10th|tenth|ssc|secondary)\b/.test(t)) return "10";
+  if (/\b(xii|12|12th|twelfth|hsc|higher secondary|senior secondary|intermediate|inter|pcb|pcm|plus two)\b|\+2/.test(t)) return "12";
+  if (/\b(x|10|10th|tenth|ssc|matric|matriculation|high school|secondary)\b/.test(t)) return "10";
   if (/\b(b\.?\s?tech|btech|b\.?\s?e|bsc|b\.?\s?sc|bca|bba|b\.?\s?com|bachelor)/.test(t)) return "bachelor";
   if (/\b(m\.?\s?tech|mtech|msc|m\.?\s?sc|mca|mba|master)/.test(t)) return "master";
   return null;
@@ -138,6 +139,21 @@ function yearOf(value: unknown, last = false): number | null {
   const years = String(value ?? "").match(/(?:19|20)\d{2}/g);
   if (!years) return null;
   return Number(last ? years[years.length - 1] : years[0]);
+}
+
+/** All years mentioned in start/end as an [earliest, latest] range; tolerant of CVs with start > end typos. */
+function yearRange(e: Entry): [number, number] | null {
+  const years = `${e.startDate ?? ""} ${e.endDate ?? ""}`.match(/(?:19|20)\d{2}/g)?.map(Number);
+  if (!years || years.length === 0) return null;
+  return [Math.min(...years), Math.max(...years)];
+}
+
+/** Education periods are compatible when start and end years each match within `tolerance`; unknown dates do not conflict. */
+function rangesCompatible(a: Entry, b: Entry, tolerance: number): boolean {
+  const ra = yearRange(a);
+  const rb = yearRange(b);
+  if (!ra || !rb) return true;
+  return Math.abs(ra[0] - rb[0]) <= tolerance && Math.abs(ra[1] - rb[1]) <= tolerance;
 }
 
 /** True when the two dates (any format) point to the same year, within `tolerance`; unknown dates do not conflict. */
@@ -152,7 +168,7 @@ type Entry = Record<string, unknown>;
 
 /** Entries with the same name but clearly different dates are different stints, not duplicates. */
 const DATES_COMPATIBLE: Partial<Record<ListKey, (a: Entry, b: Entry) => boolean>> = {
-  education: (a, b) => yearsCompatible(a.startDate, b.startDate, 1) && yearsCompatible(a.endDate, b.endDate, 1),
+  education: (a, b) => rangesCompatible(a, b, 1),
   internships: (a, b) => yearsCompatible(a.startDate, b.startDate, 0) && yearsCompatible(a.endDate, b.endDate, 0),
   volunteering: (a, b) => yearsCompatible(a.startDate, b.startDate, 0) && yearsCompatible(a.endDate, b.endDate, 0),
 };
@@ -164,11 +180,13 @@ const FUZZY_MATCH: Partial<Record<ListKey, (a: Entry, b: Entry) => boolean>> = {
     const la = educationLevel(a.qualification);
     const lb = educationLevel(b.qualification);
     if (la && lb && la !== lb) return false;
+    // Same school and the same school level (e.g. both Grade 10) is one entry, whatever the dates say
+    if (la && la === lb) return true;
     // Without any date on either side there is not enough evidence for same-school entries
     const hasDates = (yearOf(a.startDate) !== null && yearOf(b.startDate) !== null) ||
       (yearOf(a.endDate, true) !== null && yearOf(b.endDate, true) !== null);
     if (!hasDates) return la !== null && la === lb;
-    return yearsCompatible(a.startDate, b.startDate, 1) && yearsCompatible(a.endDate, b.endDate, 1);
+    return rangesCompatible(a, b, 1);
   },
   internships: (a, b) => {
     if (!sameOrganisation(a.company, b.company)) return false;
