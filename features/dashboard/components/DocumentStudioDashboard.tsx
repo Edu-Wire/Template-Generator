@@ -61,7 +61,7 @@ import {
   SAMPLE_STUDENTS,
 } from "@/lib/sampleStudents";
 import type { DocumentData } from "@/types";
-import { syncSectionsToCvData, syncCvDataToSections, headingToSectionId, normalizeInternshipPaste, normalizeCvSections } from "../utils/documentStudioSync";
+import { syncSectionsToCvData, syncCvDataToSections, headingToSectionId, customSectionId, normalizeInternshipPaste, normalizeCvSections } from "../utils/documentStudioSync";
 import { mergeImportedIntoCv } from "@/features/document-generator/utils/mergeImportedCv";
 import type { ImportOverrides } from "@/features/document-generator/types/import";
 import { parseDateRange } from "@/features/document-generator/utils/dateRange";
@@ -973,6 +973,7 @@ export function DocumentStudioDashboard() {
   const chatHistoryRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [isAddSectionOpen, setIsAddSectionOpen] = useState(false);
+  const [customSectionDialog, setCustomSectionDialog] = useState<{ title: string } | null>(null);
   const [isSectionsExpanded, setIsSectionsExpanded] = useState(false);
   const addSectionMenuRef = useRef<HTMLDivElement>(null);
   const [showInfoPopover, setShowInfoPopover] = useState(false);
@@ -2633,9 +2634,12 @@ export function DocumentStudioDashboard() {
 
       // 0. Create the (empty) section on the CV right away so it is visible on the
       // canvas; details can then be filled via the AI chat or edited manually.
-      const newSectionId = headingToSectionId(promptDef.heading);
-      const alreadyInSections = editableDocContent.sections.some(
-        (s) => headingToSectionId(s.heading || "") === newSectionId
+      const mappedSectionId = headingToSectionId(promptDef.heading);
+      const newSectionId = mappedSectionId ?? customSectionId(promptDef.heading);
+      const alreadyInSections = editableDocContent.sections.some((s) =>
+        mappedSectionId
+          ? headingToSectionId(s.heading || "") === mappedSectionId
+          : (s.heading || "").trim().toLowerCase() === promptDef.heading.trim().toLowerCase()
       );
       if (newSectionId && !sectionAlreadyExists) {
         const baseCv =
@@ -8431,6 +8435,62 @@ export function DocumentStudioDashboard() {
                           </svg>
                         </button>
 
+                        {customSectionDialog && (
+                          <div
+                            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+                            onClick={() => setCustomSectionDialog(null)}
+                          >
+                            <form
+                              className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 animate-in fade-in zoom-in-95 duration-150"
+                              onClick={(e) => e.stopPropagation()}
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const title = customSectionDialog.title.trim();
+                                if (!title) return;
+                                setCustomSectionDialog(null);
+                                handleAddSection(title, "");
+                              }}
+                            >
+                              <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-lg">➕</div>
+                                <div>
+                                  <h3 className="text-base font-bold text-slate-800">Add Custom Section</h3>
+                                  <p className="text-xs text-slate-500">Give your new section a title.</p>
+                                </div>
+                              </div>
+                              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Section title</label>
+                              <input
+                                autoFocus
+                                type="text"
+                                maxLength={60}
+                                value={customSectionDialog.title}
+                                onChange={(e) => setCustomSectionDialog({ title: e.target.value })}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") setCustomSectionDialog(null);
+                                }}
+                                placeholder="e.g. Volunteer Work, Publications, Projects"
+                                className="w-full px-3 py-2.5 text-sm text-slate-800 border border-slate-300 rounded-lg outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+                              />
+                              <div className="flex justify-end gap-2 mt-5">
+                                <button
+                                  type="button"
+                                  onClick={() => setCustomSectionDialog(null)}
+                                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="submit"
+                                  disabled={!customSectionDialog.title.trim()}
+                                  className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition cursor-pointer"
+                                >
+                                  Add Section
+                                </button>
+                              </div>
+                            </form>
+                          </div>
+                        )}
+
                         {isAddSectionOpen && (
                           <div className="absolute right-0 top-full mt-1.5 w-72 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 z-50 text-xs animate-in fade-in zoom-in-95 duration-100 divide-y divide-slate-100">
                             <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
@@ -8445,8 +8505,12 @@ export function DocumentStudioDashboard() {
                                     key={item.key}
                                     type="button"
                                     onClick={() => {
-                                      handleAddSection(item.heading, "");
                                       setIsAddSectionOpen(false);
+                                      if (item.key === "customSection") {
+                                        setCustomSectionDialog({ title: "" });
+                                        return;
+                                      }
+                                      handleAddSection(item.heading, "");
                                     }}
                                     className="w-full px-3 py-1.5 text-left hover:bg-indigo-50/80 text-slate-700 hover:text-indigo-700 flex items-center justify-between transition cursor-pointer"
                                   >

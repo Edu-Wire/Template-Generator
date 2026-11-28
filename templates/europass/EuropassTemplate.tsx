@@ -372,12 +372,16 @@ export function EuropassTemplate({
       academicInterests: (academicInterests?.length ?? 0) > 0,
       declaration: declaration.trim().length > 0,
     };
+    for (const c of data.customSections ?? []) {
+      hasContent[c.id] = (c.content ?? "").trim().length > 0;
+    }
     return (data.pendingSections ?? [])
       .filter((id) => id in hasContent && !hasContent[id])
       .join("|");
   }, [
     isInteractive,
     data.pendingSections,
+    data.customSections,
     aboutMe,
     educationEntries.length,
     internshipEntries.length,
@@ -424,7 +428,10 @@ export function EuropassTemplate({
         allItems.push({
           key: `pending_${secId}`,
           secKey: `pending_${secId}`,
-          title: PENDING_SECTION_TITLES[secId],
+          title:
+            PENDING_SECTION_TITLES[secId] ??
+            (data.customSections ?? []).find((c) => c.id === secId)?.title.toUpperCase() ??
+            secId.toUpperCase(),
         });
         continue;
       }
@@ -1469,7 +1476,12 @@ export function EuropassTemplate({
     // Sequence of sections to place, dynamically determined by movableOrder:
     for (const secId of movableOrder) {
       if (pendingEmptyIds.has(secId)) {
-        placeAtomic(`pending_${secId}`, PENDING_SECTION_TITLES[secId]);
+        placeAtomic(
+          `pending_${secId}`,
+          PENDING_SECTION_TITLES[secId] ??
+            (data.customSections ?? []).find((c) => c.id === secId)?.title.toUpperCase() ??
+            secId.toUpperCase()
+        );
         continue;
       }
       switch (secId) {

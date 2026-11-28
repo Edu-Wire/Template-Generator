@@ -48,6 +48,11 @@ const EUROPASS_STUDIO_DEFAULT_ORDER: string[] = [
   "declaration",
 ];
 
+/** Stable id for a user-defined (custom) section, derived from its title. */
+export function customSectionId(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "custom";
+}
+
 /**
  * Maps a flat studio section heading to its canonical DocumentData sectionId.
  */
@@ -579,11 +584,33 @@ export function syncSectionsToCvData(
     updatedCv.recommendations = [];
   }
 
+  // 16b. Custom (non-standard) sections: any heading that maps to no canonical id
+  // becomes a customSections entry so it survives the flat -> structured sync,
+  // even while still empty.
+  {
+    const prevCustom = baseCv.customSections ?? [];
+    const customs: NonNullable<DocumentData["customSections"]> = [];
+    for (const sec of sections) {
+      const heading = (sec.heading || "").trim();
+      if (!heading || headingToSectionId(heading) !== null) continue;
+      const prev = prevCustom.find((c) => c.title.trim().toLowerCase() === heading.toLowerCase());
+      customs.push({
+        id: prev?.id ?? customSectionId(heading),
+        title: prev?.title ?? heading,
+        content: sec.content || "",
+      });
+    }
+    updatedCv.customSections = customs;
+  }
+
   // 17. Map dynamic section order from sections array for Europass template
   const detectedOrder: string[] = [];
   for (const sec of sections) {
     if (sec.heading) {
-      const id = headingToSectionId(sec.heading);
+      const id =
+        headingToSectionId(sec.heading) ??
+        updatedCv.customSections?.find((c) => c.title.trim().toLowerCase() === sec.heading!.trim().toLowerCase())?.id ??
+        null;
       if (id && !detectedOrder.includes(id)) {
         detectedOrder.push(id);
       }
